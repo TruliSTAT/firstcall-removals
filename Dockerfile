@@ -19,4 +19,5 @@ COPY backend/ ./backend/
 EXPOSE 3001
 
 # Start
-CMD ["node", "backend/server.js"]
+WORKDIR /app/backend
+CMD ["node", "server.js"]
