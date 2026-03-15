@@ -4,7 +4,7 @@
 `server.js` — mounts all routes, CORS, JSON middleware, serves frontend static in prod.
 
 ## Database (database.js)
-- Uses Node.js native `node:sqlite` (DatabaseSync) — NOT better-sqlite3 or sqlite3 npm package
+- Uses `better-sqlite3` npm package (`require('better-sqlite3')`) — NOT node:sqlite or sqlite3
 - Single DB file: `funeral_transport.db`
 - `initDb()` → creates tables + calls migrateDb() + seedData()
 - `migrateDb()` → safe column additions. ALWAYS add new columns here with existence checks:
