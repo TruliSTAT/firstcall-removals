@@ -1420,8 +1420,12 @@ const FuneralTransportApp = () => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-md p-6 w-full max-w-md">
           <div className="text-center mb-6">
-            <Truck className="w-12 h-12 text-blue-600 mx-auto mb-2" />
-            <h1 className="text-xl font-bold text-gray-900">Funeral Transport Services</h1>
+            <img
+              src="/logos/wings-only.jpg"
+              alt="STAT First Call Removals"
+              className="h-20 mx-auto mb-3 object-contain"
+            />
+            <h1 className="text-xl font-bold text-gray-900">STAT First Call Removals</h1>
             <p className="text-gray-600">Professional Decedent Transportation</p>
           </div>
           <div className="space-y-4">
@@ -1476,8 +1480,14 @@ const FuneralTransportApp = () => {
       {/* Header */}
       <div className="bg-blue-900 text-white p-4 shadow-lg">
         <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-xl font-bold">Funeral Transport Services</h1>
+          <div className="flex items-center gap-3">
+            <img
+              src="/logos/wings-only.jpg"
+              alt="STAT"
+              className="h-10 w-auto object-contain rounded"
+            />
+            <div>
+            <h1 className="text-xl font-bold">STAT First Call Removals</h1>
             <p className="text-blue-200 text-sm">
               {userRole && userRole.replace('_', ' ').toUpperCase()} Portal
               {currentUser && <span className="ml-2 opacity-70">— {currentUser.username}</span>}
@@ -1487,6 +1497,7 @@ const FuneralTransportApp = () => {
                 </span>
               )}
             </p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             {alerts.length > 0 && (
