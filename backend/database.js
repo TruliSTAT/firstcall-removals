@@ -178,6 +178,12 @@ function migrateDb(db) {
   // Add deleted_at column to funeral_homes if missing
   try { db.exec('ALTER TABLE funeral_homes ADD COLUMN deleted_at TEXT'); } catch (_) {}
 
+  // Add email column to users if missing
+  try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch (_) {}
+
+  // Add funeral_home_name column to users if missing
+  try { db.exec('ALTER TABLE users ADD COLUMN funeral_home_name TEXT'); } catch (_) {}
+
   // Add phone/notes to drivers if missing
   try { db.exec('ALTER TABLE drivers ADD COLUMN phone TEXT'); } catch (_) {}
   try { db.exec('ALTER TABLE drivers ADD COLUMN notes TEXT'); } catch (_) {}

@@ -27,6 +27,15 @@ function parseCSVLine(line) {
   return result;
 }
 
+// GET /api/funeral-homes/public — list names for registration dropdown (no auth)
+router.get('/public', (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(
+    'SELECT id, name FROM funeral_homes WHERE deleted_at IS NULL ORDER BY name'
+  ).all();
+  res.json({ funeralHomes: rows });
+});
+
 // GET /api/funeral-homes — list all (auth required)
 router.get('/', authenticateToken, (req, res) => {
   const db = getDb();

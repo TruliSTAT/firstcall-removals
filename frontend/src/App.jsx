@@ -1020,6 +1020,11 @@ const FuneralTransportApp = () => {
   const [showForm, setShowForm] = useState(false);
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
+  const [showRegister, setShowRegister] = useState(false);
+  const [registerData, setRegisterData] = useState({ username: '', email: '', password: '', role: 'funeral_home', inviteCode: '', funeralHomeId: '', funeralHomeName: '', customFuneralHome: '' });
+  const [registerError, setRegisterError] = useState('');
+  const [regFuneralHomes, setRegFuneralHomes] = useState([]);
+  const [regFhLoading, setRegFhLoading] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState('');
@@ -1164,6 +1169,56 @@ const FuneralTransportApp = () => {
       setLoading(false);
     }
   };
+
+  const handleRegister = async () => {
+    setRegisterError('');
+    if (!registerData.username || !registerData.password) {
+      setRegisterError('Username and password are required');
+      return;
+    }
+    // Resolve funeral home name for funeral_home role
+    let funeralHomeName = null;
+    if (registerData.role === 'funeral_home') {
+      if (registerData.funeralHomeId === '__custom__') {
+        funeralHomeName = registerData.customFuneralHome.trim() || null;
+      } else if (registerData.funeralHomeId) {
+        const fh = regFuneralHomes.find(f => String(f.id) === String(registerData.funeralHomeId));
+        funeralHomeName = fh ? fh.name : null;
+      }
+    }
+    setLoading(true);
+    try {
+      const payload = {
+        username: registerData.username,
+        email: registerData.email,
+        password: registerData.password,
+        role: registerData.role,
+        inviteCode: registerData.inviteCode,
+        funeralHomeName,
+      };
+      const { token, user } = await apiRequest('POST', '/auth/register', payload);
+      setToken(token);
+      setCurrentUser(user);
+      setUserRole(user.role);
+      setIsLoggedIn(true);
+      setActiveTab(user.role === 'funeral_home' ? 'request' : 'dispatch');
+    } catch (err) {
+      setRegisterError(err.message || 'Registration failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load funeral homes list for registration dropdown (public endpoint, no auth needed)
+  useEffect(() => {
+    if (!showRegister || registerData.role !== 'funeral_home') return;
+    setRegFhLoading(true);
+    fetch('/api/funeral-homes/public')
+      .then(r => r.json())
+      .then(data => setRegFuneralHomes(data.funeralHomes || []))
+      .catch(() => setRegFuneralHomes([]))
+      .finally(() => setRegFhLoading(false));
+  }, [showRegister, registerData.role]);
 
   const handleLogout = async () => {
     try { await apiRequest('POST', '/auth/logout'); } catch (_) {}
@@ -1428,46 +1483,158 @@ const FuneralTransportApp = () => {
             <h1 className="text-xl font-bold text-gray-900">STAT First Call Removals</h1>
             <p className="text-gray-600">Professional Decedent Transportation</p>
           </div>
-          <div className="space-y-4">
-            {loginError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
-                {loginError}
+          {!showRegister ? (
+            <div className="space-y-4">
+              {loginError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+                  {loginError}
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input
+                  type="text"
+                  value={loginData.username}
+                  onChange={(e) => setLoginData(prev => ({ ...prev, username: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter username"
+                />
               </div>
-            )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-              <input
-                type="text"
-                value={loginData.username}
-                onChange={(e) => setLoginData(prev => ({ ...prev, username: e.target.value }))}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter username"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  type="password"
+                  value={loginData.password}
+                  onChange={(e) => setLoginData(prev => ({ ...prev, password: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter password"
+                />
+              </div>
+              <button
+                onClick={handleLogin}
+                disabled={loading}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                <LogIn className="w-4 h-4 inline mr-2" />
+                {loading ? 'Logging in...' : 'Login'}
+              </button>
+              <div className="text-center">
+                <button
+                  onClick={() => { setShowRegister(true); setLoginError(''); }}
+                  className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  New here? Create an account →
+                </button>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                value={loginData.password}
-                onChange={(e) => setLoginData(prev => ({ ...prev, password: e.target.value }))}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter password"
-              />
+          ) : (
+            <div className="space-y-4">
+              {registerError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+                  {registerError}
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <input
+                  type="text"
+                  value={registerData.username}
+                  onChange={(e) => setRegisterData(prev => ({ ...prev, username: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="Choose a username"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={registerData.email}
+                  onChange={(e) => setRegisterData(prev => ({ ...prev, email: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="Your email address"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <input
+                  type="password"
+                  value={registerData.password}
+                  onChange={(e) => setRegisterData(prev => ({ ...prev, password: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                  placeholder="Min 6 characters"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Account Type</label>
+                <select
+                  value={registerData.role}
+                  onChange={(e) => setRegisterData(prev => ({ ...prev, role: e.target.value, inviteCode: '' }))}
+                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="funeral_home">Funeral Home</option>
+                  <option value="employee">Employee</option>
+                </select>
+              </div>
+              {registerData.role === 'funeral_home' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Funeral Home</label>
+                  {regFhLoading ? (
+                    <div className="text-sm text-gray-400 py-2">Loading...</div>
+                  ) : (
+                    <select
+                      value={registerData.funeralHomeId}
+                      onChange={(e) => setRegisterData(prev => ({ ...prev, funeralHomeId: e.target.value, customFuneralHome: '' }))}
+                      className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">— Select your funeral home —</option>
+                      {regFuneralHomes.map(fh => (
+                        <option key={fh.id} value={fh.id}>{fh.name}</option>
+                      ))}
+                      <option value="__custom__">My funeral home isn't listed — Add it</option>
+                    </select>
+                  )}
+                  {registerData.funeralHomeId === '__custom__' && (
+                    <input
+                      type="text"
+                      value={registerData.customFuneralHome}
+                      onChange={(e) => setRegisterData(prev => ({ ...prev, customFuneralHome: e.target.value }))}
+                      className="w-full mt-2 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter your funeral home name"
+                    />
+                  )}
+                </div>
+              )}
+              {registerData.role === 'employee' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Access Code</label>
+                  <input
+                    type="text"
+                    value={registerData.inviteCode}
+                    onChange={(e) => setRegisterData(prev => ({ ...prev, inviteCode: e.target.value }))}
+                    className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                    placeholder="Employee access code"
+                  />
+                </div>
+              )}
+              <button
+                onClick={handleRegister}
+                disabled={loading}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {loading ? 'Creating account...' : 'Create Account'}
+              </button>
+              <div className="text-center">
+                <button
+                  onClick={() => { setShowRegister(false); setRegisterError(''); }}
+                  className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  Already have an account? Sign in →
+                </button>
+              </div>
             </div>
-            <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-              <strong>Demo:</strong> admin / admin123 &nbsp;|&nbsp; employee / employee123 &nbsp;|&nbsp; funeralhome / funeral123
-            </div>
-            <button
-              onClick={handleLogin}
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50"
-            >
-              <LogIn className="w-4 h-4 inline mr-2" />
-              {loading ? 'Logging in...' : 'Login'}
-            </button>
-          </div>
+          )}
         </div>
       </div>
     );
