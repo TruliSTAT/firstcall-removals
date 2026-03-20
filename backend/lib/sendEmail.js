@@ -1,6 +1,6 @@
 const { Resend } = require('resend');
 
-const resend = new Resend('re_DfxCWGDy_H7v4EvaGY6Pzc4VJZE4pDWxe');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 async function sendVerificationEmail(toEmail, toName, token) {
   const appUrl = process.env.APP_URL || 'https://firstcallremovals.com';
