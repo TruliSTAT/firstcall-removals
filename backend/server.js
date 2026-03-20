@@ -22,6 +22,15 @@ app.use(express.json());
 // Initialize database
 initDb();
 
+// Seed funeral home clients from CSV on startup (idempotent — skips existing)
+try {
+  const { seedClients } = require('./scripts/seed-clients.js');
+  const { getDb } = require('./database');
+  seedClients(getDb());
+} catch (err) {
+  console.warn('[seed] Client seed skipped:', err.message);
+}
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/transports', require('./routes/transports'));
