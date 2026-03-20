@@ -184,6 +184,11 @@ function migrateDb(db) {
   // Add funeral_home_name column to users if missing
   try { db.exec('ALTER TABLE users ADD COLUMN funeral_home_name TEXT'); } catch (_) {}
 
+  // Add email verification columns to users if missing
+  try { db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0'); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN verification_token TEXT'); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN verification_sent_at TEXT'); } catch (_) {}
+
   // Add phone/notes to drivers if missing
   try { db.exec('ALTER TABLE drivers ADD COLUMN phone TEXT'); } catch (_) {}
   try { db.exec('ALTER TABLE drivers ADD COLUMN notes TEXT'); } catch (_) {}
