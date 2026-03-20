@@ -1021,6 +1021,8 @@ const FuneralTransportApp = () => {
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [showRegister, setShowRegister] = useState(false);
+  const [showVerifyPrompt, setShowVerifyPrompt] = useState(false);
+  const [verifyStatus, setVerifyStatus] = useState(null); // null | 'success' | 'error' | 'checking'
   const [registerData, setRegisterData] = useState({ username: '', email: '', password: '', role: 'funeral_home', inviteCode: '', funeralHomeId: '', funeralHomeName: '', customFuneralHome: '' });
   const [registerError, setRegisterError] = useState('');
   const [regFuneralHomes, setRegFuneralHomes] = useState([]);
@@ -1087,6 +1089,17 @@ const FuneralTransportApp = () => {
         });
       }
     } catch (_) {}
+  }, []);
+
+  // ── Email verification link handler ─────────────────────────────────────
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const verifyToken = params.get('verify');
+    if (!verifyToken) return;
+    setVerifyStatus('checking');
+    // Redirect to backend verify endpoint — it returns an HTML page
+    window.location.href = `/api/auth/verify-email?token=${verifyToken}`;
   }, []);
 
   // ── Session restore ──────────────────────────────────────────────────────
@@ -1196,12 +1209,22 @@ const FuneralTransportApp = () => {
         inviteCode: registerData.inviteCode,
         funeralHomeName,
       };
-      const { token, user } = await apiRequest('POST', '/auth/register', payload);
-      setToken(token);
-      setCurrentUser(user);
-      setUserRole(user.role);
-      setIsLoggedIn(true);
-      setActiveTab(user.role === 'funeral_home' ? 'request' : 'dispatch');
+      const result = await apiRequest('POST', '/auth/register', payload);
+      // New flow: email verification required — no token returned until verified
+      if (result.success && result.message) {
+        setRegisterError('');
+        setShowRegister(false);
+        setShowVerifyPrompt(true);
+        return;
+      }
+      // Legacy / employee flow: token returned immediately
+      if (result.token) {
+        setToken(result.token);
+        setCurrentUser(result.user);
+        setUserRole(result.user.role);
+        setIsLoggedIn(true);
+        setActiveTab(result.user.role === 'funeral_home' ? 'request' : 'dispatch');
+      }
     } catch (err) {
       setRegisterError(err.message || 'Registration failed');
     } finally {
@@ -1471,6 +1494,29 @@ const FuneralTransportApp = () => {
   // ── Login screen ─────────────────────────────────────────────────────────
 
   if (!isLoggedIn) {
+    // Email verification success prompt
+    if (showVerifyPrompt) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-md p-8 w-full max-w-md text-center">
+            <img src="/logos/wings-only.jpg" alt="STAT First Call Removals" className="h-20 mx-auto mb-4 object-contain" />
+            <div className="text-5xl mb-4">✉️</div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Check Your Email</h2>
+            <p className="text-gray-600 mb-6">
+              We sent a verification link to your email address. Click the link to activate your account, then come back to log in.
+            </p>
+            <p className="text-xs text-gray-400 mb-6">The link expires in 24 hours. Check your spam folder if you don't see it.</p>
+            <button
+              onClick={() => setShowVerifyPrompt(false)}
+              className="w-full py-2 px-4 bg-gray-800 text-white rounded-lg hover:bg-gray-700 font-medium"
+            >
+              Back to Login
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-md p-6 w-full max-w-md">

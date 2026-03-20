@@ -2,7 +2,8 @@ const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, 'funeral_transport.db');
+// Use /data volume on Railway (persistent), fall back to local for dev
+const DB_PATH = process.env.DATABASE_URL || path.join(__dirname, 'funeral_transport.db');
 
 let db;
 
