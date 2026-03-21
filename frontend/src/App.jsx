@@ -1042,6 +1042,317 @@ const locationTypes = [
   'Funeral Home/Care Center', 'State Facility', 'Hospice', 'MEO/Lab'
 ];
 
+// ─── Calendar Tab ─────────────────────────────────────────────────────────────
+
+function cityFromAddress(addr) {
+  if (!addr) return '';
+  // Try to extract city — look for common patterns like "City, TX" or last comma segment
+  const parts = addr.split(',').map(s => s.trim());
+  if (parts.length >= 2) return parts[parts.length - 2].trim();
+  const words = addr.trim().split(/\s+/);
+  return words[words.length - 1] || '';
+}
+
+function formatTimeShort(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function sameDay(dateStr, year, month, day) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  return d.getFullYear() === year && d.getMonth() + 1 === month && d.getDate() === day;
+}
+
+function CalendarTab({ transports, invoices, userRole }) {
+  const today = new Date();
+  const [currentDate, setCurrentDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [view, setView] = useState('performance'); // 'performance' | 'upcoming'
+  const [calendarData, setCalendarData] = useState({ current: [], lastYear: [] });
+  const [loadingCal, setLoadingCal] = useState(false);
+  const [selectedDay, setSelectedDay] = useState(null);     // { year, month, day }
+  const [expandedCells, setExpandedCells] = useState({});   // key => bool
+
+  const year  = currentDate.getFullYear();
+  const month = currentDate.getMonth() + 1; // 1-based
+
+  // Fetch backend calendar data when year/month changes
+  useEffect(() => {
+    if (view !== 'performance') return;
+    setLoadingCal(true);
+    apiRequest('GET', `/transports/calendar?year=${year}&month=${month}`)
+      .then(data => setCalendarData(data))
+      .catch(() => setCalendarData({ current: [], lastYear: [] }))
+      .finally(() => setLoadingCal(false));
+  }, [year, month, view]);
+
+  // Build days for the grid
+  const firstDayOfMonth = new Date(year, month - 1, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const daysInPrevMonth = new Date(year, month - 1, 0).getDate();
+
+  // Build 6×7 grid cells
+  const cells = [];
+  // Prev month fill
+  for (let i = firstDayOfMonth - 1; i >= 0; i--) {
+    cells.push({ day: daysInPrevMonth - i, currentMonth: false, year: month === 1 ? year - 1 : year, month: month === 1 ? 12 : month - 1 });
+  }
+  // Current month
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ day: d, currentMonth: true, year, month });
+  }
+  // Next month fill
+  const remaining = 42 - cells.length;
+  for (let d = 1; d <= remaining; d++) {
+    cells.push({ day: d, currentMonth: false, year: month === 12 ? year + 1 : year, month: month === 12 ? 1 : month + 1 });
+  }
+
+  // ── Performance data ──────────────────────────────────────────────────────
+  function getPerfTransports(y, mo, d) {
+    return calendarData.current.filter(t => sameDay(t.completed_at, y, mo, d));
+  }
+  function getLastYearCount(mo, d) {
+    return calendarData.lastYear.filter(t => {
+      if (!t.completed_at) return false;
+      const dt = new Date(t.completed_at);
+      return dt.getMonth() + 1 === mo && dt.getDate() === d;
+    }).length;
+  }
+
+  // ── Upcoming data (from transports prop) ─────────────────────────────────
+  const upcomingTransports = transports.filter(t => t.scheduledPickupAt && t.status === 'Pending');
+  function getUpcomingTransports(y, mo, d) {
+    return upcomingTransports.filter(t => sameDay(t.scheduledPickupAt, y, mo, d));
+  }
+
+  // ── Monthly summary ───────────────────────────────────────────────────────
+  const monthName = currentDate.toLocaleString('default', { month: 'long' });
+
+  const perfSummary = (() => {
+    const calls = calendarData.current.length;
+    const miles = calendarData.current.reduce((s, t) => s + (parseFloat(t.actual_miles) || 0), 0);
+    const revenue = calendarData.current.reduce((s, t) => s + (parseFloat(t.total_cost) || 0), 0);
+    return { calls, miles: Math.round(miles), revenue: revenue.toFixed(2) };
+  })();
+
+  const upcomingSummary = (() => {
+    const calls = upcomingTransports.filter(t => {
+      if (!t.scheduledPickupAt) return false;
+      const d = new Date(t.scheduledPickupAt);
+      return d.getFullYear() === year && d.getMonth() + 1 === month;
+    }).length;
+    return { calls };
+  })();
+
+  // ── Year selector ─────────────────────────────────────────────────────────
+  const currentYear = today.getFullYear();
+  const yearOptions = Array.from({ length: 11 }, (_, i) => currentYear - 5 + i);
+
+  function prevMonth() {
+    setCurrentDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+    setExpandedCells({});
+  }
+  function nextMonth() {
+    setCurrentDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+    setExpandedCells({});
+  }
+  function goToday() {
+    setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    setExpandedCells({});
+  }
+
+  // ── Day detail modal data ─────────────────────────────────────────────────
+  function getSelectedDayTransports() {
+    if (!selectedDay) return [];
+    const { year: sy, month: sm, day: sd } = selectedDay;
+    if (view === 'performance') return getPerfTransports(sy, sm, sd);
+    return getUpcomingTransports(sy, sm, sd);
+  }
+
+  const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  return (
+    <div className="space-y-4">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-3 justify-between">
+        <div className="flex items-center gap-2">
+          <button onClick={prevMonth} className="p-1.5 rounded hover:bg-gray-100 text-gray-600">‹</button>
+          <span className="text-lg font-semibold min-w-[160px] text-center">{monthName} {year}</span>
+          <button onClick={nextMonth} className="p-1.5 rounded hover:bg-gray-100 text-gray-600">›</button>
+          <button onClick={goToday} className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-100 ml-1">Today</button>
+          <select
+            value={year}
+            onChange={e => { setCurrentDate(new Date(parseInt(e.target.value), month - 1, 1)); setExpandedCells({}); }}
+            className="text-xs border border-gray-300 rounded px-2 py-1 text-gray-600"
+          >
+            {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        {/* View toggle */}
+        <div className="flex rounded-lg overflow-hidden border border-gray-300">
+          <button
+            onClick={() => setView('performance')}
+            className={`px-3 py-1.5 text-sm font-medium transition-colors ${view === 'performance' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+          >
+            📊 Performance
+          </button>
+          <button
+            onClick={() => setView('upcoming')}
+            className={`px-3 py-1.5 text-sm font-medium transition-colors ${view === 'upcoming' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+          >
+            📅 Upcoming
+          </button>
+        </div>
+      </div>
+
+      {/* ── Day-of-week headers ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-t overflow-hidden">
+        {DAYS_OF_WEEK.map(d => (
+          <div key={d} className="bg-gray-50 text-center text-xs font-semibold text-gray-500 py-2">{d}</div>
+        ))}
+      </div>
+
+      {/* ── Calendar grid ──────────────────────────────────────────────── */}
+      {loadingCal && view === 'performance' && (
+        <div className="text-center text-sm text-gray-400 py-4">Loading calendar data…</div>
+      )}
+      <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-b overflow-hidden">
+        {cells.map((cell, idx) => {
+          const isToday = cell.currentMonth && cell.day === today.getDate() && cell.year === today.getFullYear() && cell.month === today.getMonth() + 1;
+          const cellKey = `${cell.year}-${cell.month}-${cell.day}`;
+
+          let pills = [];
+          let lastYearCount = 0;
+          let hasUpcoming = false;
+
+          if (view === 'performance') {
+            pills = getPerfTransports(cell.year, cell.month, cell.day);
+            lastYearCount = cell.currentMonth ? getLastYearCount(cell.month, cell.day) : 0;
+          } else {
+            pills = getUpcomingTransports(cell.year, cell.month, cell.day);
+            hasUpcoming = pills.length > 0;
+          }
+
+          const maxPills = expandedCells[cellKey] ? pills.length : 3;
+          const overflow = pills.length > 3 && !expandedCells[cellKey] ? pills.length - 3 : 0;
+          const visiblePills = pills.slice(0, maxPills);
+
+          return (
+            <div
+              key={idx}
+              onClick={() => pills.length > 0 && setSelectedDay({ year: cell.year, month: cell.month, day: cell.day })}
+              className={`relative min-h-[90px] p-1 bg-white transition-colors
+                ${cell.currentMonth ? '' : 'opacity-40'}
+                ${pills.length > 0 ? 'cursor-pointer hover:bg-gray-50' : ''}
+                ${view === 'upcoming' && hasUpcoming ? 'border-l-2 border-blue-400' : ''}
+              `}
+            >
+              {/* Previous year watermark */}
+              {view === 'performance' && lastYearCount > 0 && (
+                <span className="absolute inset-0 flex items-center justify-center text-5xl font-black text-gray-100 select-none pointer-events-none z-0">
+                  {lastYearCount}
+                </span>
+              )}
+
+              {/* Day number */}
+              <div className={`text-xs font-bold mb-1 relative z-10 w-5 h-5 flex items-center justify-center
+                ${isToday ? 'bg-gray-900 text-white rounded-full' : cell.currentMonth ? 'text-gray-700' : 'text-gray-400'}
+              `}>
+                {cell.day}
+              </div>
+
+              {/* Event pills */}
+              {visiblePills.map((t, i) => (
+                view === 'performance' ? (
+                  <div key={t.id || i} className="text-[10px] bg-gray-100 border border-gray-300 rounded px-1 py-0.5 mb-0.5 truncate text-gray-700 hover:bg-gray-200 relative z-10">
+                    🕊️ {t.funeral_home_name} · {t.case_number} · ${parseFloat(t.total_cost || 0).toFixed(0)} · {cityFromAddress(t.pickup_location)} · {t.actual_miles || 0}mi
+                  </div>
+                ) : (
+                  <div key={t.id || i} className="text-[10px] bg-blue-50 border border-blue-300 rounded px-1 py-0.5 mb-0.5 truncate text-blue-700 hover:bg-blue-100 relative z-10">
+                    ⏰ {t.funeralHomeName} · {t.caseNumber} · {cityFromAddress(t.pickupLocation)} · {formatTimeShort(t.scheduledPickupAt)}
+                  </div>
+                )
+              ))}
+
+              {overflow > 0 && (
+                <div
+                  onClick={e => { e.stopPropagation(); setExpandedCells(prev => ({ ...prev, [cellKey]: true })); }}
+                  className="text-[10px] text-blue-600 cursor-pointer hover:underline relative z-10"
+                >
+                  +{overflow} more
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Monthly summary bar ─────────────────────────────────────────── */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-2 text-sm text-gray-600">
+        {view === 'performance'
+          ? <><strong>{monthName} {year}</strong> — {perfSummary.calls} completed call{perfSummary.calls !== 1 ? 's' : ''} · {perfSummary.miles} miles · ${parseFloat(perfSummary.revenue).toLocaleString(undefined, { minimumFractionDigits: 2 })} revenue</>
+          : <><strong>{monthName} {year}</strong> — {upcomingSummary.calls} scheduled call{upcomingSummary.calls !== 1 ? 's' : ''} upcoming</>
+        }
+      </div>
+
+      {/* ── Day detail modal ────────────────────────────────────────────── */}
+      {selectedDay && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedDay(null)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="font-semibold text-gray-900">
+                {view === 'performance' ? '🕊️ Completed Transports' : '⏰ Scheduled Pickups'} —{' '}
+                {new Date(selectedDay.year, selectedDay.month - 1, selectedDay.day).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+              </h3>
+              <button onClick={() => setSelectedDay(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+            <div className="p-4 space-y-3">
+              {getSelectedDayTransports().length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-4">No transports for this day.</p>
+              )}
+              {view === 'performance'
+                ? getSelectedDayTransports().map(t => {
+                    const inv = invoices?.find(i => i.transportId === t.id || i.transport_id === t.id);
+                    const invNum = t.invoice_number || inv?.invoiceNumber || inv?.invoice_number || null;
+                    return (
+                      <div key={t.id} className="border border-gray-200 rounded-lg p-3 text-sm space-y-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-semibold text-gray-900">{t.decedent_name || '—'}</span>
+                          <span className="text-green-700 font-medium whitespace-nowrap">${parseFloat(t.total_cost || 0).toFixed(2)}</span>
+                        </div>
+                        <div className="text-gray-500 text-xs">Case: {t.case_number || '—'}</div>
+                        <div className="text-gray-600">{t.funeral_home_name || '—'}</div>
+                        <div className="text-gray-500 text-xs">{t.pickup_location} → {t.destination}</div>
+                        <div className="flex gap-4 text-xs text-gray-400">
+                          <span>{t.actual_miles || 0} miles</span>
+                          {invNum && <span>Invoice #{invNum}</span>}
+                          {t.completed_at && <span>Completed: {new Date(t.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+                        </div>
+                      </div>
+                    );
+                  })
+                : getSelectedDayTransports().map(t => (
+                    <div key={t.id} className="border border-blue-100 rounded-lg p-3 text-sm space-y-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="font-semibold text-gray-900">{t.decedentName || '—'}</span>
+                        <span className="text-blue-600 font-medium whitespace-nowrap">⏰ {formatTimeShort(t.scheduledPickupAt)}</span>
+                      </div>
+                      <div className="text-gray-500 text-xs">Case: {t.caseNumber || '—'}</div>
+                      <div className="text-gray-600">{t.funeralHomeName || '—'}</div>
+                      <div className="text-gray-500 text-xs">{t.pickupLocation} → {t.destination}</div>
+                      <div className="text-xs text-gray-400">{t.actualMiles ? `${t.actualMiles} miles` : t.estimatedMiles ? `~${t.estimatedMiles} miles (est)` : ''}</div>
+                    </div>
+                  ))
+              }
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 const FuneralTransportApp = () => {
@@ -1940,8 +2251,8 @@ const FuneralTransportApp = () => {
                 <Activity className="w-4 h-4 inline mr-1" />Dispatch Board
                 {pendingCount > 0 && <span className="ml-1 bg-yellow-500 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingCount}</span>}
               </TabBtn>
-              <TabBtn active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')}>
-                📅 Schedule
+              <TabBtn active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')}>
+                📅 Calendar
               </TabBtn>
               <TabBtn active={activeTab === 'assignments'} onClick={() => setActiveTab('assignments')}>
                 <Users className="w-4 h-4 inline mr-1" />Assignments
@@ -2628,58 +2939,9 @@ const FuneralTransportApp = () => {
           </div>
         )}
 
-        {/* ── Schedule Tab (Admin/Employee) ────────────────────────────── */}
-        {activeTab === 'schedule' && (userRole === 'admin' || userRole === 'employee') && (
-          <div>
-            <h2 className="text-lg font-semibold mb-4">📅 Scheduled Pickups</h2>
-            {(() => {
-              const scheduled = transports
-                .filter(t => t.scheduledPickupAt && t.status === 'Pending')
-                .sort((a, b) => new Date(a.scheduledPickupAt) - new Date(b.scheduledPickupAt));
-              if (!scheduled.length) return (
-                <div className="text-center py-12">
-                  <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500">No upcoming scheduled transports</p>
-                  <p className="text-xs text-gray-400 mt-1">Scheduled transports with Pending status appear here</p>
-                </div>
-              );
-              return (
-                <div className="space-y-2">
-                  {scheduled.map(t => (
-                    <div key={t.id} className="bg-white rounded-lg border border-indigo-100 shadow-sm p-4 flex items-center gap-4">
-                      <div className="flex-shrink-0 text-center bg-indigo-50 rounded-lg p-2 min-w-[60px]">
-                        <div className="text-xs text-indigo-500 font-medium">
-                          {new Date(t.scheduledPickupAt).toLocaleDateString([], { month: 'short' }).toUpperCase()}
-                        </div>
-                        <div className="text-xl font-bold text-indigo-700">
-                          {new Date(t.scheduledPickupAt).getDate()}
-                        </div>
-                        <div className="text-xs text-indigo-500">
-                          {new Date(t.scheduledPickupAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-gray-900 truncate">{t.decedentName || '—'}</p>
-                          <StatusBadge status={t.status} />
-                        </div>
-                        <p className="text-sm text-gray-500 truncate">{t.funeralHomeName}</p>
-                        <p className="text-xs text-gray-400 truncate">{t.pickupLocation} → {t.destination}</p>
-                      </div>
-                      <div className="flex-shrink-0">
-                        <button
-                          onClick={() => setActiveTab('dispatch')}
-                          className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 font-medium"
-                        >
-                          View
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-          </div>
+        {/* ── Calendar Tab (Admin/Employee) ────────────────────────────── */}
+        {activeTab === 'calendar' && (userRole === 'admin' || userRole === 'employee') && (
+          <CalendarTab transports={transports} invoices={invoices} userRole={userRole} />
         )}
 
         {/* ── Documents Tab ────────────────────────────────────────────── */}

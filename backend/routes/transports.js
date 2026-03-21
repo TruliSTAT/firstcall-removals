@@ -598,6 +598,38 @@ router.post('/:id/documents', authenticateToken, (req, res) => {
   res.status(201).json({ document: doc });
 });
 
+// GET /api/transports/calendar — completed + lastYear transports for a given month
+router.get('/calendar', authenticateToken, requireRole('admin', 'employee'), (req, res) => {
+  const db = getDb();
+  const year  = parseInt(req.query.year  || new Date().getFullYear(), 10);
+  const month = parseInt(req.query.month || (new Date().getMonth() + 1), 10);
+
+  // Zero-pad for SQL LIKE comparison
+  const monthStr     = String(month).padStart(2, '0');
+  const lastYear     = year - 1;
+  const prefix       = `${year}-${monthStr}`;
+  const prefixLast   = `${lastYear}-${monthStr}`;
+
+  const cols = `
+    t.id, t.case_number, t.decedent_name, t.funeral_home_name,
+    t.pickup_location, t.destination, t.actual_miles, t.total_cost,
+    t.completed_at, t.status, t.scheduled_pickup_at,
+    i.invoice_number, i.id AS invoice_id
+  `;
+
+  const sql = `
+    SELECT ${cols}
+    FROM transports t
+    LEFT JOIN invoices i ON i.transport_id = t.id
+    WHERE t.status = 'Completed' AND t.completed_at LIKE ?
+  `;
+
+  const current  = db.prepare(sql).all(`${prefix}%`);
+  const lastYearRows = db.prepare(sql).all(`${prefixLast}%`);
+
+  res.json({ current, lastYear: lastYearRows });
+});
+
 // GET /api/transports/:id/documents — list saved documents
 router.get('/:id/documents', authenticateToken, (req, res) => {
   const { id } = req.params;
