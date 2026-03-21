@@ -545,8 +545,20 @@ const VEHICLE_STATUS_COLORS = {
 const EMPTY_DRIVER_FORM = { name: '', status: 'Available', currentLocation: '', phone: '', notes: '' };
 const EMPTY_VEHICLE_FORM = { name: '', type: '', status: 'Available', driverId: '', notes: '' };
 
+const MAINTENANCE_TYPES = [
+  'Oil Change', 'Tire Rotation', 'New Tires', 'Brake Service', 'Battery Replacement',
+  'AC/Heat Service', 'Transmission Service', 'Engine Repair', 'Body Repair',
+  'State Inspection', 'Registration Renewal', 'Windshield', 'Other'
+];
+
+const EMPTY_MAINTENANCE_FORM = {
+  type: 'Oil Change', description: '', cost: '', mileage_at_service: '',
+  next_due_mileage: '', next_due_date: '', performed_by: '', notes: '',
+  performed_at: new Date().toISOString().split('T')[0],
+};
+
 const FleetTab = ({ drivers, vehicles, onRefresh, adminUsersData, adminUsersLoading, adminUsersSearch, setAdminUsersSearch, onLoadUsers }) => {
-  const [fleetSection, setFleetSection] = useState('drivers'); // 'drivers' | 'vehicles' | 'users'
+  const [fleetSection, setFleetSection] = useState('drivers'); // 'drivers' | 'vehicles' | 'users' | 'maintenance'
 
   // Driver state
   const [showDriverForm, setShowDriverForm] = useState(false);
@@ -563,6 +575,67 @@ const FleetTab = ({ drivers, vehicles, onRefresh, adminUsersData, adminUsersLoad
   const [vehicleLoading, setVehicleLoading] = useState(false);
   const [vehicleError, setVehicleError] = useState('');
   const [vehicleDeleteId, setVehicleDeleteId] = useState(null);
+
+  // Maintenance state
+  const [maintenanceRecords, setMaintenanceRecords] = useState([]);
+  const [maintenanceLoading, setMaintenanceLoading] = useState(false);
+  const [maintenanceError, setMaintenanceError] = useState('');
+  const [showMaintenanceForm, setShowMaintenanceForm] = useState(false);
+  const [maintenanceForm, setMaintenanceForm] = useState(EMPTY_MAINTENANCE_FORM);
+  const [selectedVehicleId, setSelectedVehicleId] = useState('');
+  const [maintenanceDeleteId, setMaintenanceDeleteId] = useState(null);
+
+  const loadMaintenance = useCallback(async () => {
+    setMaintenanceLoading(true);
+    try {
+      const { maintenance } = await apiRequest('GET', '/vehicles/maintenance/all');
+      setMaintenanceRecords(maintenance || []);
+    } catch (err) {
+      setMaintenanceError(err.message);
+    } finally {
+      setMaintenanceLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (fleetSection === 'maintenance') loadMaintenance();
+  }, [fleetSection, loadMaintenance]);
+
+  const handleSaveMaintenance = async () => {
+    if (!selectedVehicleId) { setMaintenanceError('Select a vehicle'); return; }
+    if (!maintenanceForm.type) { setMaintenanceError('Service type is required'); return; }
+    setMaintenanceLoading(true);
+    setMaintenanceError('');
+    try {
+      await apiRequest('POST', `/vehicles/${selectedVehicleId}/maintenance`, {
+        ...maintenanceForm,
+        cost: parseFloat(maintenanceForm.cost) || 0,
+        mileage_at_service: maintenanceForm.mileage_at_service ? parseInt(maintenanceForm.mileage_at_service) : null,
+        next_due_mileage: maintenanceForm.next_due_mileage ? parseInt(maintenanceForm.next_due_mileage) : null,
+        next_due_date: maintenanceForm.next_due_date || null,
+      });
+      setShowMaintenanceForm(false);
+      setMaintenanceForm(EMPTY_MAINTENANCE_FORM);
+      await loadMaintenance();
+    } catch (err) {
+      setMaintenanceError(err.message);
+    } finally {
+      setMaintenanceLoading(false);
+    }
+  };
+
+  const handleDeleteMaintenance = async (vehicleId, recordId) => {
+    setMaintenanceLoading(true);
+    try {
+      await apiRequest('DELETE', `/vehicles/${vehicleId}/maintenance/${recordId}`);
+      setMaintenanceDeleteId(null);
+      await loadMaintenance();
+    } catch (err) {
+      setMaintenanceError(err.message);
+    } finally {
+      setMaintenanceLoading(false);
+    }
+  };
 
   // ── Driver handlers ──────────────────────────────────────────────────────
 
@@ -712,6 +785,12 @@ const FleetTab = ({ drivers, vehicles, onRefresh, adminUsersData, adminUsersLoad
           className={`flex-shrink-0 py-2 px-4 text-sm font-medium border-b-2 -mb-px ${fleetSection === 'users' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
           👥 Users
+        </button>
+        <button
+          onClick={() => { setFleetSection('maintenance'); setShowDriverForm(false); setShowVehicleForm(false); setShowMaintenanceForm(false); }}
+          className={`flex-shrink-0 py-2 px-4 text-sm font-medium border-b-2 -mb-px ${fleetSection === 'maintenance' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          🔧 Maintenance
         </button>
       </div>
 
@@ -2248,6 +2327,11 @@ const FuneralTransportApp = () => {
 
           {(userRole === 'employee' || userRole === 'admin') && (
             <>
+              {userRole === 'admin' && (
+                <TabBtn active={activeTab === 'request'} onClick={() => setActiveTab('request')}>
+                  <Plus className="w-4 h-4 inline mr-1" />New Call
+                </TabBtn>
+              )}
               <TabBtn active={activeTab === 'dispatch'} onClick={() => setActiveTab('dispatch')}>
                 <Activity className="w-4 h-4 inline mr-1" />Dispatch Board
                 {pendingCount > 0 && <span className="ml-1 bg-yellow-500 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingCount}</span>}
@@ -2314,9 +2398,29 @@ const FuneralTransportApp = () => {
           </div>
         )}
 
-        {/* ── New Request Tab (Funeral Homes) ─────────────────────────── */}
-        {activeTab === 'request' && userRole === 'funeral_home' && (
+        {/* ── New Request Tab (Funeral Homes + Admin) ─────────────────── */}
+        {activeTab === 'request' && (userRole === 'funeral_home' || userRole === 'admin') && (
           <div>
+            {/* Admin: on-behalf-of selector */}
+            {userRole === 'admin' && (
+              <div className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-center gap-3">
+                <span className="text-indigo-700 font-semibold text-sm whitespace-nowrap">📋 Submitting on behalf of:</span>
+                <select
+                  value={formData.funeralHomeName}
+                  onChange={e => {
+                    const selected = funeralHomes.find(h => h.name === e.target.value);
+                    handleInputChange('funeralHomeName', e.target.value);
+                    if (selected) handleInputChange('funeralHomePhone', selected.phone || '');
+                  }}
+                  className="flex-1 p-2 border border-indigo-300 rounded bg-white text-sm focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">— Select Funeral Home —</option>
+                  {funeralHomes.map(h => (
+                    <option key={h.id} value={h.name}>{h.name} {h.city ? `— ${h.city}` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {/* Smart Paste Modal */}
             {showSmartPaste && (
               <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
