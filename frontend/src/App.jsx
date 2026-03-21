@@ -3945,6 +3945,293 @@ const DocumentsPanel = ({ transports }) => {
     const printDiv = document.createElement('div');
     printDiv.id = 'fcr-print-doc';
 
+    // ── STAT MCS First Call — faithful form layout ──────────────────────
+    if (tpl.id === 'stat-mcs-first-call') {
+      const fv = fieldValues;
+      const yn = (id) => {
+        const v = fv[id] || '';
+        return `<span class="yn-box${v==='Y'?' selected':''}">Y</span><span class="yn-box${v==='N'?' selected':''}">N</span>`;
+      };
+      const val = (id) => fv[id] || '';
+      const underline = (id, minW) => `<span class="field-value${minW?' short':''}" style="${minW?'min-width:'+minW+'px':''}">${fv[id]||''}</span>`;
+
+      const locationTypes = ['Residence','ALF','Nursing Home','Hospice','Hospital','ER','Morgue','Funeral Home','Med Exam/Lab','On Scene'];
+      const selectedLoc = val('location_type');
+      const locHtml = locationTypes.map(opt =>
+        `<span class="loc-option${opt===selectedLoc?' selected':''}">${opt}</span>`
+      ).join('');
+
+      const sexVal = val('sex');
+      const sexMale = `<span class="loc-option${sexVal==='Male'?' selected':''}">Male</span>`;
+      const sexFemale = `<span class="loc-option${sexVal==='Female'?' selected':''}">Female</span>`;
+
+      const witnessSig = fv.witness_signature || null;
+      const sigHtml = witnessSig
+        ? `<img src="${witnessSig}" style="height:28px;border-bottom:1px solid #333;margin-left:4px;vertical-align:bottom">`
+        : `<span class="field-value" style="min-width:200px;display:inline-block">&nbsp;</span>`;
+
+      const effRowsHtml = effectsRows.map(r =>
+        `<tr>
+          <td style="text-align:center">${r.itemNum}</td>
+          <td>${r.qty||''}</td>
+          <td>${r.description||''}</td>
+          <td>${r.jewelry||''}</td>
+          <td>${r.initials||''}</td>
+        </tr>`
+      ).join('');
+
+      const noEffects = fv.no_personal_effects;
+      const complianceBanner = `ALL STAT MCS TECHS HAVE GOVERNMENT-ISSUED TWIC CARDS &amp; ARE BACKGROUND CHECKED. STAT MCS IS FULLY INSURED &amp; BONDED. ALL TRANSPORTS COMPLY WITH STATE AND FEDERAL REGULATIONS.`;
+
+      printDiv.innerHTML = `
+        <style>
+          @page { size: letter portrait; margin: 0.45in; }
+          @media print { body > *:not(#fcr-print-doc) { display: none !important; } #fcr-print-doc { display: block !important; } }
+          #fcr-print-doc { font-family: Arial, sans-serif; font-size: 10pt; color: #111; }
+          .form-header { display: flex; justify-content: space-between; align-items: flex-start; border: 2px solid #333; padding: 6px 10px 6px 8px; }
+          .form-header .logo-block { display: flex; align-items: flex-start; gap: 8px; }
+          .form-header .logo-wings { font-size: 28pt; line-height: 1; color: #1a3a6b; }
+          .form-header .company-name { font-size: 13pt; font-weight: bold; line-height: 1.2; }
+          .form-header .company-sub { font-size: 8pt; color: #333; }
+          .form-header .contact-info { font-size: 8.5pt; text-align: right; line-height: 1.6; }
+          .form-header .control-num { margin-top: 4px; font-size: 9pt; }
+          .form-section { border: 1px solid #333; border-bottom: none; padding: 4px 8px; }
+          .form-section.last { border-bottom: 1px solid #333; }
+          .section-row { display: flex; gap: 14px; align-items: baseline; margin: 2px 0; flex-wrap: nowrap; }
+          .field-label { font-size: 8pt; font-weight: bold; white-space: nowrap; }
+          .field-value { border-bottom: 1px solid #333; min-width: 80px; flex: 1; font-size: 10pt; padding: 0 2px; display: inline-block; min-height: 14px; }
+          .field-value.short { min-width: 40px; flex: none; }
+          .yn-box { display: inline-block; border: 1px solid #333; width: 16px; height: 14px; text-align: center; font-size: 8.5pt; line-height: 14px; margin: 0 1px; font-weight: bold; }
+          .yn-box.selected { background: #333; color: white; }
+          .loc-option { display: inline-block; border: 1px solid #555; padding: 1px 5px; margin: 1px 2px; font-size: 8pt; }
+          .loc-option.selected { background: #333; color: white; }
+          .two-col { display: flex; border: 1px solid #333; border-bottom: none; }
+          .two-col .left { flex: 1; padding: 4px 8px; border-right: 1px solid #333; }
+          .two-col .right { width: 210px; padding: 4px 8px; }
+          .two-col .left .section-row { margin: 1px 0; }
+          .two-col .right .inj-row { display: flex; gap: 6px; align-items: baseline; margin: 1px 0; }
+          .effects-table { width: 100%; border-collapse: collapse; }
+          .effects-table th, .effects-table td { border: 1px solid #333; padding: 2px 4px; font-size: 8pt; }
+          .effects-table th { background: #eee; font-weight: bold; text-align: center; }
+          .effects-table td:first-child { text-align: center; width: 24px; }
+          .effects-table td:nth-child(2) { width: 36px; }
+          .effects-table td:nth-child(4) { width: 70px; }
+          .effects-table td:nth-child(5) { width: 70px; }
+          .compliance { font-size: 7pt; color: #444; text-align: center; border: 1px solid #333; border-bottom: none; padding: 3px 8px; }
+          .compliance.last { border-bottom: 1px solid #333; }
+          .section-title { font-size: 8pt; font-weight: bold; text-transform: uppercase; margin-bottom: 2px; }
+        </style>
+
+        <!-- HEADER -->
+        <div class="form-header">
+          <div class="logo-block">
+            <div class="logo-wings">🦅</div>
+            <div>
+              <div class="company-name">STAT MCS</div>
+              <div class="company-sub">MEDICAL COURIER SERVICES</div>
+              <div class="company-sub" style="font-weight:bold;margin-top:2px">FIRST CALL INTAKE</div>
+            </div>
+          </div>
+          <div class="contact-info">
+            <div><strong>Office:</strong> (281) 940-6525</div>
+            <div>www.statmcs.com</div>
+            <div>statmcs.com@gmail.com</div>
+            <div class="control-num"><strong>Control #:</strong> <span class="field-value short">${val('control_number')}</span></div>
+          </div>
+        </div>
+
+        <!-- COMPLIANCE BANNER -->
+        <div class="compliance">${complianceBanner}</div>
+
+        <!-- CLIENT / CODE / DATE -->
+        <div class="form-section">
+          <div class="section-row">
+            <span class="field-label">Client:</span><span class="field-value">${val('client')}</span>
+            <span class="field-label">Code:</span><span class="field-value short" style="width:70px">${val('code')}</span>
+            <span class="field-label">Date:</span><span class="field-value short" style="width:90px">${val('date')}</span>
+          </div>
+        </div>
+
+        <!-- VETERAN / FAMILY / DECOMP / ORGAN / ARRIVAL -->
+        <div class="form-section">
+          <div class="section-row">
+            <span class="field-label">Veteran:</span> ${yn('veteran')}
+            &nbsp;&nbsp;
+            <span class="field-label">Family Present:</span> ${yn('family_present')}
+            &nbsp;&nbsp;
+            <span class="field-label">DeComp:</span> ${yn('decomp')}
+            &nbsp;&nbsp;
+            <span class="field-label">Organ Donor:</span> ${yn('organ_donor')}
+          </div>
+          <div class="section-row">
+            <span class="field-label">Arrival Time:</span><span class="field-value short" style="width:80px">${val('arrival_time')}</span>
+          </div>
+        </div>
+
+        <!-- LOCATION TYPE -->
+        <div class="form-section">
+          <div><span class="field-label">TYPE OF LOCATION:</span> ${locHtml}</div>
+        </div>
+
+        <!-- NAME OF DECEASED / SEX -->
+        <div class="form-section">
+          <div class="section-row">
+            <span class="field-label">Name of Deceased:</span><span class="field-value">${val('decedent_name')}</span>
+            &nbsp;&nbsp;
+            <span class="field-label">Sex:</span> ${sexMale} ${sexFemale}
+          </div>
+        </div>
+
+        <!-- LOCATION ADDRESS / FACILITY / PHONE / CONTACTS -->
+        <div class="form-section">
+          <div class="section-row">
+            <span class="field-label">Location Address:</span><span class="field-value">${val('location_address')}</span>
+            <span class="field-label">City:</span><span class="field-value short" style="width:100px">${val('location_city')}</span>
+          </div>
+          <div class="section-row">
+            <span class="field-label">Facility Name:</span><span class="field-value">${val('facility_name')}</span>
+            <span class="field-label">Remarks:</span><span class="field-value short" style="width:120px">${val('remarks')}</span>
+          </div>
+          <div class="section-row">
+            <span class="field-label">Location Phone #:</span><span class="field-value short" style="width:140px">${val('location_phone')}</span>
+          </div>
+          <div class="section-row">
+            <span class="field-label">Contact:</span><span class="field-value">${val('contact_primary')}</span>
+            <span class="field-label">or</span>
+            <span class="field-value">${val('contact_secondary')}</span>
+          </div>
+        </div>
+
+        <!-- STAIRS/OBSTACLES -->
+        <div class="form-section">
+          <div class="section-row">
+            <span class="field-label">Any Stairs/Obstacles:</span> ${yn('stairs_obstacles')}
+            &nbsp;&nbsp;
+            <span class="field-label">If Yes, WHAT?</span><span class="field-value">${val('stairs_details')}</span>
+          </div>
+        </div>
+
+        <!-- DOB / DOD / AGE / TOD / WEIGHT -->
+        <div class="form-section">
+          <div class="section-row">
+            <span class="field-label">DOB:</span><span class="field-value short" style="width:90px">${val('dob')}</span>
+            <span class="field-label">DOD:</span><span class="field-value short" style="width:90px">${val('dod')}</span>
+            <span class="field-label">Age:</span><span class="field-value short" style="width:50px">${val('age')}</span>
+          </div>
+          <div class="section-row">
+            <span class="field-label">TOD:</span><span class="field-value short" style="width:80px">${val('tod')}</span>
+            &nbsp;&nbsp;
+            <span class="field-label">Weight:</span><span class="field-value short" style="width:60px">${val('weight')}</span>
+            <span class="field-label">lbs</span>
+          </div>
+        </div>
+
+        <!-- EXTRA TECH / AFTER HOURS / BODY BAG / ICE / ADMIN / AIRPORT -->
+        <div class="form-section">
+          <div class="section-row">
+            <span class="field-label">Extra Tech:</span> ${yn('extra_tech')}
+            &nbsp;
+            <span class="field-label">After Hours:</span> ${yn('after_hours')}
+            &nbsp;
+            <span class="field-label">Body Bag:</span> ${yn('body_bag')}
+            &nbsp;
+            <span class="field-label">Ice:</span> ${yn('ice')}
+          </div>
+          <div class="section-row">
+            <span class="field-label">Airport Charges $:</span><span class="field-value short" style="width:100px">${val('airport_charges')}</span>
+          </div>
+        </div>
+
+        <!-- TWO-COLUMN: NOK + INJURIES -->
+        <div class="two-col">
+          <div class="left">
+            <div class="section-row"><span class="field-label">Name of NOK:</span><span class="field-value">${val('nok_name')}</span></div>
+            <div class="section-row"><span class="field-label">Phone # NOK:</span><span class="field-value">${val('nok_phone')}</span></div>
+            <div class="section-row"><span class="field-label">Relationship:</span><span class="field-value">${val('nok_relationship')}</span></div>
+            <div class="section-row"><span class="field-label">Email of NOK:</span><span class="field-value">${val('nok_email')}</span></div>
+            <div style="margin:4px 0 2px"><hr style="border:none;border-top:1px solid #ccc"></div>
+            <div class="section-row"><span class="field-label">Doctor signing DC:</span><span class="field-value">${val('doctor_name')}</span></div>
+            <div class="section-row"><span class="field-label">DR. Phone #:</span><span class="field-value">${val('doctor_phone')}</span></div>
+            <div class="section-row"><span class="field-label">Releasing Authority:</span><span class="field-value">${val('releasing_authority')}</span></div>
+            <div class="section-row"><span class="field-label">ID Anklet Applied By:</span><span class="field-value">${val('id_anklet_applied_by')}</span></div>
+            <div style="margin-top:6px;font-size:9pt">${noEffects ? '☑' : '☐'} <strong>NO PERSONAL EFFECTS</strong></div>
+          </div>
+          <div class="right">
+            <div class="section-title">Any Noticeable Injuries:</div>
+            <div class="inj-row"><span class="field-label">Blood:</span> ${yn('injury_blood')} &nbsp; <span class="field-label">Bruising:</span> ${yn('injury_bruising')}</div>
+            <div class="inj-row"><span class="field-label">Burn:</span> ${yn('injury_burn')} &nbsp; <span class="field-label">Cuts:</span> ${yn('injury_cuts')}</div>
+            <div class="inj-row"><span class="field-label">Discolored:</span> ${yn('injury_discolored')}</div>
+            <div class="inj-row"><span class="field-label">Head Injury:</span> ${yn('injury_head')}</div>
+            <div class="inj-row"><span class="field-label">Recent Scar:</span> ${yn('injury_scar')}</div>
+            <div class="inj-row"><span class="field-label">Scrapes:</span> ${yn('injury_scrapes')}</div>
+            <div style="margin-top:6px">
+              <div class="field-label" style="margin-bottom:2px">NOTES:</div>
+              <div class="field-value" style="min-height:30px;min-width:unset;width:100%;display:block">${val('notes')}</div>
+            </div>
+            <div style="margin-top:6px">
+              <div class="section-row"><span class="field-label">Invoice #:</span><span class="field-value">${val('invoice_number')}</span></div>
+              <div class="section-row"><span class="field-label">TOTAL: $</span><span class="field-value">${val('total')}</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PERSONAL EFFECTS INVENTORY -->
+        <div class="form-section">
+          <div class="section-title">Personal Effects Inventory</div>
+          <table class="effects-table">
+            <thead>
+              <tr>
+                <th>#</th><th>Qty</th><th>Clothing/Item Description</th><th>Jewelry</th><th>Witness Init</th>
+              </tr>
+            </thead>
+            <tbody>${effRowsHtml}</tbody>
+          </table>
+        </div>
+
+        <!-- REMAINS DELIVERED TO -->
+        <div class="form-section">
+          <div class="section-row">
+            <span class="field-label">Remains Delivered To:</span><span class="field-value">${val('delivered_to')}</span>
+            <span class="field-label">Address:</span><span class="field-value">${val('delivery_address')}</span>
+          </div>
+          <div class="section-row">
+            <span class="field-label">City:</span><span class="field-value">${val('delivery_city')}</span>
+            <span class="field-label">Code:</span><span class="field-value short" style="width:80px">${val('code')}</span>
+          </div>
+        </div>
+
+        <!-- TECHNICIAN / DATES / TIMES / SIGNATURE -->
+        <div class="form-section">
+          <div class="section-row">
+            <span class="field-label">STAT MCS Technician:</span><span class="field-value">${val('technician_name')}</span>
+            <span class="field-label">Date:</span><span class="field-value short" style="width:90px">${val('sign_date')}</span>
+          </div>
+          <div class="section-row">
+            <span class="field-label">Leave Time:</span><span class="field-value short" style="width:80px">${val('leave_time')}</span>
+            &nbsp;&nbsp;
+            <span class="field-label">Funeral Home Time:</span><span class="field-value short" style="width:80px">${val('funeral_home_time')}</span>
+          </div>
+          <div class="section-row" style="margin-top:4px">
+            <span class="field-label">Witness Signature: X</span>
+            ${sigHtml}
+          </div>
+          <div class="section-row">
+            <span class="field-label">Print Name:</span><span class="field-value">${val('print_name')}</span>
+            <span class="field-label">Loaded Miles:</span><span class="field-value short" style="width:60px">${val('loaded_miles')}</span>
+          </div>
+        </div>
+
+        <!-- COMPLIANCE FOOTER -->
+        <div class="compliance last">${complianceBanner}</div>
+      `;
+
+      document.body.appendChild(printDiv);
+      window.print();
+      setTimeout(() => document.body.removeChild(printDiv), 500);
+      return;
+    }
+
+    // ── Generic field list for all other templates ──────────────────────
     const renderFieldHtml = (f) => {
       if (typeof f === 'string') {
         // Legacy string field
