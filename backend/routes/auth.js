@@ -53,10 +53,27 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 6 characters' });
   }
 
-  if (role === 'employee') {
+  let inviteRow = null; // hoisted so we can mark it used after insert
+  if (role === 'employee' || role === 'admin') {
     const validCode = process.env.EMPLOYEE_INVITE_CODE || 'FCR2024STAFF';
-    if (!inviteCode || inviteCode !== validCode) {
-      return res.status(403).json({ error: 'Invalid employee access code' });
+    // Check hardcoded env code first, then invite_codes table
+    let codeValid = inviteCode && inviteCode === validCode;
+
+    if (!codeValid && inviteCode) {
+      const db = getDb();
+      const candidate = db.prepare(`
+        SELECT * FROM invite_codes
+        WHERE code = ? AND used_by IS NULL AND expires_at > datetime('now')
+      `).get(inviteCode);
+      // Code role must match requested role
+      if (candidate && candidate.role === role) {
+        codeValid = true;
+        inviteRow = candidate;
+      }
+    }
+
+    if (!codeValid) {
+      return res.status(403).json({ error: 'Invalid or expired access code' });
     }
   }
 
@@ -73,6 +90,13 @@ router.post('/register', async (req, res) => {
     `INSERT INTO users (username, password_hash, role, email, funeral_home_name, email_verified)
      VALUES (?, ?, ?, ?, ?, 1)`
   ).run(username, passwordHash, role, email || null, funeralHomeName || null);
+
+  // Mark invite code as used if one was consumed
+  if (inviteRow) {
+    db.prepare(`
+      UPDATE invite_codes SET used_by = ?, used_at = datetime('now') WHERE id = ?
+    `).run(username, inviteRow.id);
+  }
 
   res.status(201).json({
     success: true,

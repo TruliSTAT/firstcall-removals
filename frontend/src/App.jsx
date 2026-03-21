@@ -1083,6 +1083,7 @@ const FuneralTransportApp = () => {
   const [adminUsersData, setAdminUsersData] = useState(null);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [adminUsersSearch, setAdminUsersSearch] = useState('');
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Invoices state
   const [invoices, setInvoices] = useState([]);
@@ -1898,6 +1899,13 @@ const FuneralTransportApp = () => {
                 </span>
               </div>
             )}
+            <button
+              onClick={() => setShowProfileModal(true)}
+              className="text-gray-300 hover:text-white text-sm flex items-center gap-1"
+              title="My Profile"
+            >
+              👤 Profile
+            </button>
             <button onClick={handleLogout} className="text-gray-300 hover:text-white text-sm">
               Logout
             </button>
@@ -1955,12 +1963,23 @@ const FuneralTransportApp = () => {
                   <TabBtn active={activeTab === 'invoices'} onClick={() => setActiveTab('invoices')}>
                     🧾 Invoices{pendingInvoiceCount > 0 && <span className="ml-1 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingInvoiceCount}</span>}
                   </TabBtn>
+                  <TabBtn active={activeTab === 'users'} onClick={() => setActiveTab('users')}>
+                    👥 Users
+                  </TabBtn>
                 </>
               )}
             </>
           )}
         </div>
       </div>
+
+      {showProfileModal && (
+        <ProfileModal
+          currentUser={currentUser}
+          onClose={() => setShowProfileModal(false)}
+          onProfileUpdated={(updatedUser) => setCurrentUser(updatedUser)}
+        />
+      )}
 
       <div className="p-4 max-w-4xl mx-auto">
         {apiError && (
@@ -2706,6 +2725,11 @@ const FuneralTransportApp = () => {
             setAdminUsersSearch={setAdminUsersSearch}
             onLoadUsers={fetchAdminUsers}
           />
+        )}
+
+        {/* ── Users Tab (Admin only) ───────────────────────────────────── */}
+        {activeTab === 'users' && userRole === 'admin' && (
+          <AdminUsersPanel />
         )}
 
         {/* ── Funeral Homes Tab (Admin only) ───────────────────────────── */}
@@ -4855,6 +4879,804 @@ const TransportCard = ({ transport, onSaveNotes, onCopyCase, copiedId, currentUs
 
       {/* Per-transport chat */}
       <TransportChat transportId={transport.id} currentUser={currentUser} />
+    </div>
+  );
+};
+
+// ─── Profile Modal ────────────────────────────────────────────────────────────
+
+const ProfileModal = ({ currentUser, onClose, onProfileUpdated }) => {
+  const [profileForm, setProfileForm] = useState({
+    email: currentUser?.email || '',
+    phone: currentUser?.phone || '',
+    funeral_home_name: currentUser?.funeral_home_name || '',
+  });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMsg, setProfileMsg] = useState(null); // { type: 'success'|'error', text }
+
+  const [pwForm, setPwForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMsg, setPwMsg] = useState(null);
+
+  // Load fresh profile data on open
+  useEffect(() => {
+    apiRequest('GET', '/auth/me').then(({ user }) => {
+      setProfileForm({
+        email: user.email || '',
+        phone: user.phone || '',
+        funeral_home_name: user.funeral_home_name || '',
+      });
+    }).catch(() => {});
+  }, []);
+
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    setProfileMsg(null);
+    try {
+      const { user } = await apiRequest('PUT', '/auth/profile', profileForm);
+      onProfileUpdated(user);
+      setProfileMsg({ type: 'success', text: '✅ Profile saved' });
+    } catch (err) {
+      setProfileMsg({ type: 'error', text: err.message });
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!pwForm.current_password || !pwForm.new_password) {
+      setPwMsg({ type: 'error', text: 'All password fields are required' });
+      return;
+    }
+    if (pwForm.new_password.length < 6) {
+      setPwMsg({ type: 'error', text: 'New password must be at least 6 characters' });
+      return;
+    }
+    if (pwForm.new_password !== pwForm.confirm_password) {
+      setPwMsg({ type: 'error', text: 'New passwords do not match' });
+      return;
+    }
+    setPwSaving(true);
+    setPwMsg(null);
+    try {
+      await apiRequest('PUT', '/auth/change-password', {
+        current_password: pwForm.current_password,
+        new_password: pwForm.new_password,
+      });
+      setPwMsg({ type: 'success', text: '✅ Password changed successfully' });
+      setPwForm({ current_password: '', new_password: '', confirm_password: '' });
+    } catch (err) {
+      setPwMsg({ type: 'error', text: err.message });
+    } finally {
+      setPwSaving(false);
+    }
+  };
+
+  const ROLE_BADGE = {
+    admin: 'bg-red-100 text-red-700',
+    employee: 'bg-blue-100 text-blue-700',
+    funeral_home: 'bg-gray-100 text-gray-700',
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10 rounded-t-xl">
+          <h2 className="text-lg font-semibold text-gray-900">👤 My Profile</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-6">
+          {/* My Profile Section */}
+          <section>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Account Info</h3>
+            <div className="space-y-1 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">Username:</span>
+                <span className="text-sm text-gray-900 font-mono">{currentUser?.username}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">Role:</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_BADGE[currentUser?.role] || 'bg-gray-100 text-gray-700'}`}>
+                  {currentUser?.role}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={profileForm.email}
+                  onChange={e => setProfileForm(p => ({ ...p, email: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  placeholder="your@email.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  value={profileForm.phone}
+                  onChange={e => setProfileForm(p => ({ ...p, phone: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+              {currentUser?.role === 'funeral_home' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">Funeral Home</label>
+                  <input
+                    type="text"
+                    value={profileForm.funeral_home_name}
+                    onChange={e => setProfileForm(p => ({ ...p, funeral_home_name: e.target.value }))}
+                    className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="Funeral home name"
+                  />
+                </div>
+              )}
+              {profileMsg && (
+                <div className={`text-sm px-3 py-2 rounded-lg ${profileMsg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                  {profileMsg.text}
+                </div>
+              )}
+              <button
+                onClick={handleSaveProfile}
+                disabled={profileSaving}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {profileSaving ? 'Saving...' : 'Save Profile'}
+              </button>
+            </div>
+          </section>
+
+          <div className="border-t" />
+
+          {/* Change Password Section */}
+          <section>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Change Password</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Current Password</label>
+                <input
+                  type="password"
+                  value={pwForm.current_password}
+                  onChange={e => setPwForm(p => ({ ...p, current_password: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  placeholder="Current password"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">New Password</label>
+                <input
+                  type="password"
+                  value={pwForm.new_password}
+                  onChange={e => setPwForm(p => ({ ...p, new_password: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  placeholder="Min 6 characters"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={pwForm.confirm_password}
+                  onChange={e => setPwForm(p => ({ ...p, confirm_password: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  placeholder="Repeat new password"
+                />
+              </div>
+              {pwMsg && (
+                <div className={`text-sm px-3 py-2 rounded-lg ${pwMsg.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                  {pwMsg.text}
+                </div>
+              )}
+              <button
+                onClick={handleChangePassword}
+                disabled={pwSaving}
+                className="w-full bg-gray-800 text-white py-2 rounded-lg text-sm font-medium hover:bg-gray-900 disabled:opacity-50"
+              >
+                {pwSaving ? 'Changing...' : 'Change Password'}
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Admin Users Panel ────────────────────────────────────────────────────────
+
+const ROLE_BADGE_COLORS = {
+  admin: 'bg-red-100 text-red-700',
+  employee: 'bg-blue-100 text-blue-700',
+  funeral_home: 'bg-gray-100 text-gray-700',
+};
+
+const AdminUsersPanel = () => {
+  const [section, setSection] = useState('users'); // 'users' | 'codes'
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
+
+  // Edit state
+  const [editingUser, setEditingUser] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  // Reset password state
+  const [resetUserId, setResetUserId] = useState(null);
+  const [resetPw, setResetPw] = useState('');
+  const [resetSaving, setResetSaving] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [resetSuccess, setResetSuccess] = useState('');
+
+  // Delete state
+  const [deleteUserId, setDeleteUserId] = useState(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
+
+  // Create user state
+  const EMPTY_CREATE = { username: '', email: '', phone: '', password: '', role: 'employee', funeral_home_name: '' };
+  const [createForm, setCreateForm] = useState(EMPTY_CREATE);
+  const [createSaving, setCreateSaving] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createSuccess, setCreateSuccess] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+
+  // Invite codes state
+  const [codes, setCodes] = useState([]);
+  const [codesLoading, setCodesLoading] = useState(false);
+  const [codeRole, setCodeRole] = useState('employee');
+  const [generating, setGenerating] = useState(false);
+  const [generatedCode, setGeneratedCode] = useState(null);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [codeError, setCodeError] = useState('');
+  const [revoking, setRevoking] = useState(null);
+
+  const loadUsers = async () => {
+    setUsersLoading(true);
+    try {
+      const { users: data } = await apiRequest('GET', '/admin/users');
+      setUsers(data || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUsersLoading(false);
+    }
+  };
+
+  const loadCodes = async () => {
+    setCodesLoading(true);
+    try {
+      const { codes: data } = await apiRequest('GET', '/admin/invite-codes');
+      setCodes(data || []);
+    } catch (err) {
+      setCodeError(err.message);
+    } finally {
+      setCodesLoading(false);
+    }
+  };
+
+  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { if (section === 'codes') loadCodes(); }, [section]);
+
+  // ── User CRUD handlers ───────────────────────────────────────────────────
+
+  const openEdit = (u) => {
+    setEditingUser(u);
+    setEditForm({ email: u.email || '', phone: u.phone || '', role: u.role, funeral_home_name: u.funeral_home_name || '' });
+    setEditError('');
+    setResetUserId(null);
+    setDeleteUserId(null);
+  };
+
+  const handleSaveEdit = async () => {
+    setEditSaving(true);
+    setEditError('');
+    try {
+      const { user } = await apiRequest('PUT', `/admin/users/${editingUser.id}`, editForm);
+      setUsers(prev => prev.map(u => u.id === user.id ? user : u));
+      setEditingUser(null);
+    } catch (err) {
+      setEditError(err.message);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetPw || resetPw.length < 6) {
+      setResetError('Password must be at least 6 characters');
+      return;
+    }
+    setResetSaving(true);
+    setResetError('');
+    setResetSuccess('');
+    try {
+      await apiRequest('PUT', `/admin/users/${resetUserId}/reset-password`, { new_password: resetPw });
+      setResetSuccess('✅ Password reset successfully');
+      setResetPw('');
+      setTimeout(() => { setResetUserId(null); setResetSuccess(''); }, 2000);
+    } catch (err) {
+      setResetError(err.message);
+    } finally {
+      setResetSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleteSaving(true);
+    try {
+      await apiRequest('DELETE', `/admin/users/${deleteUserId}`);
+      setUsers(prev => prev.filter(u => u.id !== deleteUserId));
+      setDeleteUserId(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDeleteSaving(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    setCreateError('');
+    setCreateSuccess('');
+    if (!createForm.username || !createForm.password) {
+      setCreateError('Username and password are required');
+      return;
+    }
+    if (createForm.role === 'funeral_home' && !createForm.funeral_home_name) {
+      setCreateError('Funeral home name is required');
+      return;
+    }
+    setCreateSaving(true);
+    try {
+      const { user } = await apiRequest('POST', '/admin/users', createForm);
+      setUsers(prev => [...prev, user]);
+      setCreateForm(EMPTY_CREATE);
+      setCreateSuccess(`✅ User "${user.username}" created`);
+      setShowCreate(false);
+      setTimeout(() => setCreateSuccess(''), 4000);
+    } catch (err) {
+      setCreateError(err.message);
+    } finally {
+      setCreateSaving(false);
+    }
+  };
+
+  // ── Invite code handlers ─────────────────────────────────────────────────
+
+  const handleGenerateCode = async () => {
+    setGenerating(true);
+    setCodeError('');
+    setGeneratedCode(null);
+    try {
+      const { code } = await apiRequest('POST', '/admin/invite-codes', { role: codeRole });
+      setGeneratedCode(code);
+      setCodeCopied(false);
+      loadCodes();
+    } catch (err) {
+      setCodeError(err.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleCopyCode = (code) => {
+    navigator.clipboard.writeText(code).catch(() => {});
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  };
+
+  const handleRevokeCode = async (id) => {
+    setRevoking(id);
+    try {
+      await apiRequest('DELETE', `/admin/invite-codes/${id}`);
+      setCodes(prev => prev.filter(c => c.id !== id));
+    } catch (err) {
+      setCodeError(err.message);
+    } finally {
+      setRevoking(null);
+    }
+  };
+
+  // ── Filtered users ───────────────────────────────────────────────────────
+
+  const q = search.toLowerCase();
+  const filtered = users.filter(u =>
+    !q ||
+    u.username?.toLowerCase().includes(q) ||
+    u.email?.toLowerCase().includes(q) ||
+    u.role?.toLowerCase().includes(q) ||
+    u.funeral_home_name?.toLowerCase().includes(q)
+  );
+
+  const codeStatus = (c) => {
+    if (c.used_by) return { label: 'Used', color: 'bg-blue-100 text-blue-700' };
+    if (new Date(c.expires_at) < new Date()) return { label: 'Expired', color: 'bg-red-100 text-red-700' };
+    return { label: 'Active', color: 'bg-green-100 text-green-700' };
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">👥 User Management</h2>
+        <button
+          onClick={() => { setShowCreate(s => !s); setCreateError(''); setCreateSuccess(''); }}
+          className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium"
+        >
+          <Plus className="w-4 h-4" /> New User
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+          <button onClick={() => setError('')} className="ml-auto">×</button>
+        </div>
+      )}
+
+      {/* Sub-tabs */}
+      <div className="flex gap-2 border-b border-gray-200">
+        <button
+          onClick={() => setSection('users')}
+          className={`py-2 px-4 text-sm font-medium border-b-2 -mb-px ${section === 'users' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          <Users className="w-4 h-4 inline mr-1" />All Users ({users.length})
+        </button>
+        <button
+          onClick={() => setSection('codes')}
+          className={`py-2 px-4 text-sm font-medium border-b-2 -mb-px ${section === 'codes' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          🔑 Access Codes
+        </button>
+      </div>
+
+      {/* ── Users Section ────────────────────────────────────────────────── */}
+      {section === 'users' && (
+        <div className="space-y-3">
+          {/* Search */}
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search username, email, role, funeral home..."
+              className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+
+          {/* Create form */}
+          {showCreate && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+              <h3 className="font-semibold text-gray-800">➕ Create New User</h3>
+              {createError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 px-3 py-2 rounded">{createError}</div>}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Username *</label>
+                  <input type="text" value={createForm.username} onChange={e => setCreateForm(p => ({ ...p, username: e.target.value }))}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="username" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Password *</label>
+                  <input type="password" value={createForm.password} onChange={e => setCreateForm(p => ({ ...p, password: e.target.value }))}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Min 6 chars" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                  <input type="email" value={createForm.email} onChange={e => setCreateForm(p => ({ ...p, email: e.target.value }))}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="email@example.com" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                  <input type="tel" value={createForm.phone} onChange={e => setCreateForm(p => ({ ...p, phone: e.target.value }))}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="(555) 123-4567" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Role *</label>
+                  <select value={createForm.role} onChange={e => setCreateForm(p => ({ ...p, role: e.target.value }))}
+                    className="w-full p-2 border border-gray-300 rounded text-sm">
+                    <option value="admin">Admin</option>
+                    <option value="employee">Employee</option>
+                    <option value="funeral_home">Funeral Home</option>
+                  </select>
+                </div>
+                {createForm.role === 'funeral_home' && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Funeral Home *</label>
+                    <input type="text" value={createForm.funeral_home_name} onChange={e => setCreateForm(p => ({ ...p, funeral_home_name: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Funeral home name" />
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => { setShowCreate(false); setCreateError(''); }} className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+                <button onClick={handleCreate} disabled={createSaving} className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                  {createSaving ? 'Creating...' : 'Create User'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {createSuccess && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded text-sm">{createSuccess}</div>
+          )}
+
+          {/* User list */}
+          {usersLoading ? (
+            <div className="text-center py-8 text-gray-400"><Loader className="w-6 h-6 animate-spin mx-auto mb-2" />Loading users...</div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">No users found</div>
+          ) : (
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="text-left p-3 font-medium text-gray-600">User</th>
+                    <th className="text-left p-3 font-medium text-gray-600 hidden sm:table-cell">Email / Phone</th>
+                    <th className="text-left p-3 font-medium text-gray-600 hidden md:table-cell">Funeral Home</th>
+                    <th className="text-left p-3 font-medium text-gray-600 hidden sm:table-cell">Joined</th>
+                    <th className="p-3 w-28 text-right font-medium text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filtered.map(u => (
+                    <React.Fragment key={u.id}>
+                      <tr className="hover:bg-gray-50">
+                        <td className="p-3">
+                          <div className="font-medium text-gray-900">{u.username}</div>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_BADGE_COLORS[u.role] || 'bg-gray-100 text-gray-700'}`}>{u.role}</span>
+                        </td>
+                        <td className="p-3 text-gray-500 hidden sm:table-cell">
+                          <div>{u.email || <span className="italic text-gray-300">—</span>}</div>
+                          <div className="text-xs">{u.phone || ''}</div>
+                        </td>
+                        <td className="p-3 text-gray-500 hidden md:table-cell">{u.funeral_home_name || <span className="italic text-gray-300">—</span>}</td>
+                        <td className="p-3 text-gray-400 text-xs hidden sm:table-cell">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-1 justify-end">
+                            <button onClick={() => openEdit(editingUser?.id === u.id ? null : u)}
+                              className={`p-1.5 rounded hover:bg-blue-50 ${editingUser?.id === u.id ? 'text-blue-600' : 'text-gray-400 hover:text-blue-600'}`} title="Edit">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => { setResetUserId(resetUserId === u.id ? null : u.id); setResetPw(''); setResetError(''); setResetSuccess(''); setEditingUser(null); setDeleteUserId(null); }}
+                              className={`p-1.5 rounded hover:bg-yellow-50 ${resetUserId === u.id ? 'text-yellow-600' : 'text-gray-400 hover:text-yellow-600'}`} title="Reset Password">
+                              🔑
+                            </button>
+                            <button onClick={() => { setDeleteUserId(deleteUserId === u.id ? null : u.id); setEditingUser(null); setResetUserId(null); }}
+                              className={`p-1.5 rounded hover:bg-red-50 ${deleteUserId === u.id ? 'text-red-600' : 'text-gray-400 hover:text-red-600'}`} title="Delete">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Inline edit row */}
+                      {editingUser?.id === u.id && (
+                        <tr>
+                          <td colSpan={5} className="px-3 pb-3 bg-blue-50">
+                            <div className="grid grid-cols-2 gap-2 mt-2">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                                <input type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))}
+                                  className="w-full p-1.5 border border-gray-300 rounded text-sm" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Phone</label>
+                                <input type="tel" value={editForm.phone} onChange={e => setEditForm(p => ({ ...p, phone: e.target.value }))}
+                                  className="w-full p-1.5 border border-gray-300 rounded text-sm" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                                <select value={editForm.role} onChange={e => setEditForm(p => ({ ...p, role: e.target.value }))}
+                                  className="w-full p-1.5 border border-gray-300 rounded text-sm">
+                                  <option value="admin">Admin</option>
+                                  <option value="employee">Employee</option>
+                                  <option value="funeral_home">Funeral Home</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Funeral Home</label>
+                                <input type="text" value={editForm.funeral_home_name} onChange={e => setEditForm(p => ({ ...p, funeral_home_name: e.target.value }))}
+                                  className="w-full p-1.5 border border-gray-300 rounded text-sm" />
+                              </div>
+                            </div>
+                            {editError && <div className="text-xs text-red-600 mt-1">{editError}</div>}
+                            <div className="flex gap-2 mt-2">
+                              <button onClick={() => setEditingUser(null)} className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded text-xs hover:bg-gray-50">Cancel</button>
+                              <button onClick={handleSaveEdit} disabled={editSaving} className="flex-1 py-1.5 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50">
+                                {editSaving ? 'Saving...' : 'Save'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+
+                      {/* Inline reset password row */}
+                      {resetUserId === u.id && (
+                        <tr>
+                          <td colSpan={5} className="px-3 pb-3 bg-yellow-50">
+                            <div className="mt-2 space-y-2">
+                              <p className="text-xs text-yellow-800 font-medium">Reset password for <strong>{u.username}</strong> (no old password required)</p>
+                              <div className="flex gap-2">
+                                <input type="password" value={resetPw} onChange={e => setResetPw(e.target.value)}
+                                  className="flex-1 p-1.5 border border-gray-300 rounded text-sm" placeholder="New password (min 6)" />
+                                <button onClick={handleResetPassword} disabled={resetSaving}
+                                  className="px-3 py-1.5 bg-yellow-600 text-white rounded text-xs font-medium hover:bg-yellow-700 disabled:opacity-50">
+                                  {resetSaving ? '...' : 'Reset'}
+                                </button>
+                                <button onClick={() => setResetUserId(null)} className="px-2 py-1.5 border border-gray-300 text-gray-600 rounded text-xs hover:bg-gray-50">✕</button>
+                              </div>
+                              {resetError && <div className="text-xs text-red-600">{resetError}</div>}
+                              {resetSuccess && <div className="text-xs text-green-700">{resetSuccess}</div>}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+
+                      {/* Inline delete confirm row */}
+                      {deleteUserId === u.id && (
+                        <tr>
+                          <td colSpan={5} className="px-3 pb-3 bg-red-50">
+                            <div className="mt-2">
+                              <p className="text-xs text-red-800 font-medium mb-2">Delete <strong>{u.username}</strong>? This cannot be undone.</p>
+                              <div className="flex gap-2">
+                                <button onClick={() => setDeleteUserId(null)} className="flex-1 py-1.5 border border-gray-300 text-gray-600 rounded text-xs hover:bg-gray-50">Cancel</button>
+                                <button onClick={handleDelete} disabled={deleteSaving} className="flex-1 py-1.5 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 disabled:opacity-50">
+                                  {deleteSaving ? 'Deleting...' : 'Delete'}
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Access Codes Section ─────────────────────────────────────────── */}
+      {section === 'codes' && (
+        <div className="space-y-4">
+          {codeError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />{codeError}
+              <button onClick={() => setCodeError('')} className="ml-auto">×</button>
+            </div>
+          )}
+
+          {/* Generate code card */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+            <h3 className="font-semibold text-gray-800">🔑 Generate Access Code</h3>
+            <p className="text-xs text-gray-500">Generate a one-time code for a new user to self-register. Codes expire in 7 days.</p>
+
+            <div className="flex gap-3 items-end">
+              <div className="flex-1">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+                <select
+                  value={codeRole}
+                  onChange={e => setCodeRole(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-lg text-sm"
+                >
+                  <option value="employee">Employee</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <button
+                onClick={handleGenerateCode}
+                disabled={generating}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap"
+              >
+                {generating ? <Loader className="w-4 h-4 animate-spin inline mr-1" /> : null}
+                {generating ? 'Generating...' : 'Generate Code'}
+              </button>
+            </div>
+
+            {/* Generated code display */}
+            {generatedCode && (
+              <div className="bg-green-50 border border-green-300 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-green-700 uppercase tracking-wide">New Access Code</span>
+                  <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">Expires in 7 days</span>
+                </div>
+                <div className="flex items-center gap-2 bg-white border border-green-200 rounded-lg px-3 py-2">
+                  <code className="flex-1 text-lg font-mono font-bold tracking-widest text-gray-900">{generatedCode.code}</code>
+                  <button
+                    onClick={() => handleCopyCode(generatedCode.code)}
+                    className="text-sm px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium flex items-center gap-1"
+                  >
+                    {codeCopied ? '✓ Copied!' : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                  </button>
+                </div>
+                {/* SMS intent button */}
+                <a
+                  href={`sms:?body=Your FCR access code: ${generatedCode.code}. Register at https://firstcallremovals.com — expires in 7 days.`}
+                  className="flex items-center justify-center gap-2 w-full py-2 bg-gray-800 text-white rounded-lg text-sm font-medium hover:bg-gray-900"
+                >
+                  📱 Send via SMS
+                </a>
+                <p className="text-xs text-green-600 text-center">
+                  Share this code with your new {generatedCode.role}. It can only be used once.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Code list */}
+          {codesLoading ? (
+            <div className="text-center py-6 text-gray-400"><Loader className="w-5 h-5 animate-spin mx-auto mb-1" />Loading codes...</div>
+          ) : codes.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 bg-white rounded-xl border border-gray-200">
+              <div className="text-3xl mb-2">🔑</div>
+              <p className="text-sm">No access codes yet. Generate one above.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                All Access Codes
+              </div>
+              <div className="divide-y divide-gray-100">
+                {codes.map(c => {
+                  const s = codeStatus(c);
+                  const isActive = s.label === 'Active';
+                  return (
+                    <div key={c.id} className="flex items-center gap-3 px-4 py-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <code className="font-mono font-bold text-gray-900 tracking-wider">{c.code}</code>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_BADGE_COLORS[c.role] || 'bg-gray-100 text-gray-700'}`}>{c.role}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${s.color}`}>{s.label}</span>
+                        </div>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          Created {c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}
+                          {' · '}Expires {c.expires_at ? new Date(c.expires_at).toLocaleDateString() : '—'}
+                          {c.used_by && <span className="text-blue-500 ml-1">· Used by {c.used_by}</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {isActive && (
+                          <>
+                            <button
+                              onClick={() => handleCopyCode(c.code)}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Copy code"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <a
+                              href={`sms:?body=Your FCR access code: ${c.code}. Register at https://firstcallremovals.com — expires in 7 days.`}
+                              className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded" title="Send via SMS"
+                            >
+                              📱
+                            </a>
+                            <button
+                              onClick={() => handleRevokeCode(c.id)}
+                              disabled={revoking === c.id}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Revoke"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

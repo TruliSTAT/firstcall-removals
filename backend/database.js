@@ -257,6 +257,20 @@ function migrateDb(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);`);
   db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_seq', '1000')`).run();
 
+  // Invite codes table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invite_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      role TEXT DEFAULT 'employee',
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      used_by TEXT,
+      used_at TEXT,
+      expires_at TEXT
+    );
+  `);
+
   // Invoice table: add new columns if missing
   const invoiceNewCols = [
     ['invoice_number', 'TEXT'],
