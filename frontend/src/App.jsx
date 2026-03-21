@@ -612,8 +612,8 @@ const EMPTY_MAINTENANCE_FORM = {
   performed_at: new Date().toISOString().split('T')[0],
 };
 
-const FleetTab = ({ drivers, vehicles, onRefresh, adminUsersData, adminUsersLoading, adminUsersSearch, setAdminUsersSearch, onLoadUsers }) => {
-  const [fleetSection, setFleetSection] = useState('drivers'); // 'drivers' | 'vehicles' | 'users' | 'maintenance'
+const FleetTab = ({ drivers, vehicles, onRefresh }) => {
+  const [fleetSection, setFleetSection] = useState('drivers'); // 'drivers' | 'vehicles' | 'maintenance'
 
   // Driver state
   const [showDriverForm, setShowDriverForm] = useState(false);
@@ -836,12 +836,6 @@ const FleetTab = ({ drivers, vehicles, onRefresh, adminUsersData, adminUsersLoad
           <Truck className="w-4 h-4 inline mr-1" />Vehicles ({vehicles.length})
         </button>
         <button
-          onClick={() => { setFleetSection('users'); setShowDriverForm(false); setShowVehicleForm(false); }}
-          className={`flex-shrink-0 py-2 px-4 text-sm font-medium border-b-2 -mb-px ${fleetSection === 'users' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-        >
-          👥 Users
-        </button>
-        <button
           onClick={() => { setFleetSection('maintenance'); setShowDriverForm(false); setShowVehicleForm(false); setShowMaintenanceForm(false); }}
           className={`flex-shrink-0 py-2 px-4 text-sm font-medium border-b-2 -mb-px ${fleetSection === 'maintenance' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
@@ -980,17 +974,6 @@ const FleetTab = ({ drivers, vehicles, onRefresh, adminUsersData, adminUsersLoad
             </div>
           )}
         </div>
-      )}
-
-      {/* ── Users Section ────────────────────────────────────────────────── */}
-      {fleetSection === 'users' && (
-        <AdminUsersView
-          adminUsersData={adminUsersData}
-          adminUsersLoading={adminUsersLoading}
-          adminUsersSearch={adminUsersSearch}
-          setAdminUsersSearch={setAdminUsersSearch}
-          onLoadUsers={onLoadUsers}
-        />
       )}
 
       {/* ── Maintenance Section ─────────────────────────────────────────── */}
@@ -2533,7 +2516,7 @@ const FuneralTransportApp = () => {
 
   const myTransports = transports;  // funeral home sees their own (filtered by server)
   const pendingCount = transports.filter(t => t.status === 'Pending').length;
-  const activeCount = transports.filter(t => !['Pending', 'Completed'].includes(t.status)).length;
+  const activeCount = transports.filter(t => !['Pending', 'Completed', 'Cancelled'].includes(t.status)).length;
 
   // ── Login screen ─────────────────────────────────────────────────────────
 
@@ -3535,6 +3518,61 @@ const FuneralTransportApp = () => {
               </div>
             </div>
 
+            {/* Pending Calls */}
+            <div className="bg-white rounded-lg shadow-md p-4">
+              <h3 className="font-medium text-gray-700 mb-3">Pending <span className="text-yellow-600">({pendingCount})</span></h3>
+              {pendingCount === 0 ? (
+                <p className="text-sm text-gray-400">No pending calls</p>
+              ) : (
+                <div className="space-y-2">
+                  {transports.filter(t => t.status === 'Pending').map(t => (
+                    <div key={t.id} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-100">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-gray-900 text-sm">{t.funeralHomeName || '—'}</span>
+                          <StatusBadge status={t.status} />
+                        </div>
+                        <div className="text-xs text-gray-600 mt-0.5">
+                          {t.decedentName} · {cityFromAddress(t.pickupLocation)} → {cityFromAddress(t.destination)}
+                        </div>
+                        <div className="text-xs text-gray-400">{t.caseNumber}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Active Calls */}
+            <div className="bg-white rounded-lg shadow-md p-4">
+              <h3 className="font-medium text-gray-700 mb-3">Active Calls</h3>
+              {transports.filter(t => !['Completed', 'Cancelled', 'Pending'].includes(t.status)).length === 0 ? (
+                <p className="text-sm text-gray-400">No active calls in progress</p>
+              ) : (
+                <div className="space-y-2">
+                  {transports
+                    .filter(t => !['Completed', 'Cancelled', 'Pending'].includes(t.status))
+                    .map(t => (
+                      <div key={t.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-gray-900 text-sm">{t.funeralHomeName || '—'}</span>
+                            <StatusBadge status={t.status} />
+                          </div>
+                          <div className="text-xs text-gray-600 mt-0.5">
+                            {t.decedentName} · {cityFromAddress(t.pickupLocation)} → {cityFromAddress(t.destination)}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-0.5">
+                            {t.caseNumber}{t.assignedDriver ? ` · ${t.assignedDriver}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+              )}
+            </div>
+
             <div className="bg-white rounded-lg shadow-md p-4">
               <h3 className="font-medium text-gray-700 mb-3">Available Drivers</h3>
               <div className="space-y-2">
@@ -3622,11 +3660,6 @@ const FuneralTransportApp = () => {
             drivers={drivers}
             vehicles={vehicles}
             onRefresh={fetchData}
-            adminUsersData={adminUsersData}
-            adminUsersLoading={adminUsersLoading}
-            adminUsersSearch={adminUsersSearch}
-            setAdminUsersSearch={setAdminUsersSearch}
-            onLoadUsers={fetchAdminUsers}
           />
         )}
 

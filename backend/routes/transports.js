@@ -712,8 +712,23 @@ router.delete('/:id/documents/:docId', authenticateToken, requireRole('admin'), 
   res.json({ message: 'Document deleted' });
 });
 
+function authenticateTokenOrQuery(req, res, next) {
+  const { authenticateToken: authMiddleware, JWT_SECRET } = require('../middleware/auth');
+  // Try query param token first
+  if (req.query.token) {
+    const jwt = require('jsonwebtoken');
+    jwt.verify(req.query.token, JWT_SECRET, (err, user) => {
+      if (err) return res.status(403).json({ error: 'Invalid token' });
+      req.user = user;
+      next();
+    });
+  } else {
+    authMiddleware(req, res, next);
+  }
+}
+
 // GET /api/transports/:id/summary.pdf — generate transport summary PDF
-router.get('/:id/summary.pdf', authenticateToken, (req, res) => {
+router.get('/:id/summary.pdf', authenticateTokenOrQuery, (req, res) => {
   const { id } = req.params;
   const db = getDb();
 
