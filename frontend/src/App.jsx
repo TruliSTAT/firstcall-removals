@@ -430,12 +430,12 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
       {/* Attachments + Summary PDF */}
       {(userRole === 'admin' || userRole === 'employee') && (
         <div className="mt-2 pt-2 border-t border-gray-100 space-y-2">
-          {/* Attachment toggle */}
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Attachment toggle + Summary PDF — spread to opposite sides */}
+          <div className="flex items-center justify-between">
             <button onClick={toggleAttach}
-              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 font-medium">
+              className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-600 font-medium">
               <Paperclip className="w-3 h-3" />
-              Docs {dispatchAttachments ? `(${dispatchAttachments.length})` : ''}
+              Attachments {dispatchAttachments ? `(${dispatchAttachments.length})` : ''}
             </button>
             <button onClick={() => openAuthPdf(`/transports/${transport.id}/summary.pdf`)}
               className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600">
