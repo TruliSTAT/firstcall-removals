@@ -756,114 +756,119 @@ router.get('/:id/summary.pdf', authenticateTokenOrQuery, (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="FCR-${caseNum}-summary.pdf"`);
 
-  const doc = new PDFDocument({ margin: 50, size: 'LETTER' });
+  // Compact single-page layout — tighter margins, smaller fonts, compressed spacing
+  const doc = new PDFDocument({ margin: 30, size: 'LETTER', autoFirstPage: true });
   doc.pipe(res);
 
-  const W = 515; // usable width
+  const ML = 30;           // margin left
+  const W = 555;           // usable width (612 - 30*2 - 3 spare)
   const DARK_GRAY = '#333333';
+  const MID_GRAY = '#666666';
   const LIGHT_GRAY = '#999999';
-  const BLACK = '#000000';
+  const BLACK = '#111111';
+  const LINE_COLOR = '#dddddd';
 
-  const val = (v) => v || null; // returns null if falsy
-
+  // compact field: label tiny above, value below — row height ~26px
   function writeField(label, value, x, y, fieldWidth) {
-    doc.fontSize(8).fillColor(LIGHT_GRAY).text(label, x, y);
-    doc.fontSize(10).fillColor(value ? BLACK : LIGHT_GRAY).text(value || '—', x, y + 12, { width: fieldWidth });
+    doc.fontSize(6.5).fillColor(LIGHT_GRAY).font('Helvetica').text(label.toUpperCase(), x, y, { width: fieldWidth });
+    doc.fontSize(8.5).fillColor(value ? BLACK : LIGHT_GRAY).font(value ? 'Helvetica-Bold' : 'Helvetica')
+       .text(value || '—', x, y + 8, { width: fieldWidth, lineBreak: false });
   }
 
+  // section header — slim bar
   function sectionHeader(title, y) {
-    doc.fontSize(9).fillColor(DARK_GRAY).font('Helvetica-Bold').text(title.toUpperCase(), 50, y);
-    doc.moveTo(50, y + 14).lineTo(50 + W, y + 14).lineWidth(0.5).strokeColor('#cccccc').stroke();
+    doc.rect(ML, y, W, 13).fill('#f0f0f0');
+    doc.fontSize(7).fillColor(MID_GRAY).font('Helvetica-Bold').text(title.toUpperCase(), ML + 4, y + 3, { width: W - 8 });
     doc.font('Helvetica');
-    return y + 22;
+    return y + 17;
+  }
+
+  function hRule(y, color = LINE_COLOR) {
+    doc.moveTo(ML, y).lineTo(ML + W, y).lineWidth(0.4).strokeColor(color).stroke();
   }
 
   // ── Header ──────────────────────────────────────────────────────────────
-  doc.fontSize(22).fillColor('#1a1a1a').font('Helvetica-Bold').text('FIRST CALL REMOVALS', 50, 50);
-  doc.fontSize(11).fillColor(LIGHT_GRAY).font('Helvetica').text('Professional Funeral Transport Services', 50, 76);
-
-  doc.moveTo(50, 100).lineTo(50 + W, 100).lineWidth(1).strokeColor('#333333').stroke();
-
-  // ── Case Info ────────────────────────────────────────────────────────────
-  doc.fontSize(10).fillColor(DARK_GRAY).font('Helvetica-Bold').text('TRANSPORT SUMMARY', 50, 110);
-  doc.font('Helvetica').fontSize(10).fillColor(BLACK);
+  doc.fontSize(16).fillColor('#1a1a1a').font('Helvetica-Bold').text('FIRST CALL REMOVALS', ML, 30, { width: 300 });
+  doc.fontSize(8).fillColor(LIGHT_GRAY).font('Helvetica').text('Professional Funeral Transport Services', ML, 50);
+  // Case info on right
   const dateStr = t.date ? new Date(t.date).toLocaleDateString() : '—';
-  doc.text(`Case #: ${caseNum}   |   Date: ${dateStr}   |   Status: ${t.status}`, 50, 125);
+  doc.fontSize(8).fillColor(DARK_GRAY).font('Helvetica-Bold').text(`Case #: ${caseNum}`, ML + 350, 30, { width: 200, align: 'right' });
+  doc.fontSize(8).fillColor(MID_GRAY).font('Helvetica').text(`Date: ${dateStr}   Status: ${t.status}`, ML + 350, 42, { width: 200, align: 'right' });
 
-  doc.moveTo(50, 145).lineTo(50 + W, 145).lineWidth(0.5).strokeColor('#eeeeee').stroke();
+  hRule(62, '#333333');
 
-  let y = 160;
+  let y = 68;
 
   // ── Decedent ─────────────────────────────────────────────────────────────
   y = sectionHeader('Decedent', y);
-  writeField('Full Name', t.decedentName, 50, y, 200);
-  writeField('Date of Birth', t.dateOfBirth ? new Date(t.dateOfBirth + 'T00:00:00').toLocaleDateString() : null, 270, y, 130);
-  writeField('Weight', t.weight ? `${t.weight} lbs` : null, 420, y, 100);
-  y += 40;
-  writeField('Date of Death', t.dateOfDeath ? new Date(t.dateOfDeath + 'T00:00:00').toLocaleDateString() : null, 50, y, 200);
-  y += 40;
+  const col1 = ML, col2 = ML + 180, col3 = ML + 330, col4 = ML + 440;
+  writeField('Full Name', t.decedentName, col1, y, 170);
+  writeField('Date of Birth', t.dateOfBirth ? new Date(t.dateOfBirth + 'T00:00:00').toLocaleDateString() : null, col2, y, 140);
+  writeField('Date of Death', t.dateOfDeath ? new Date(t.dateOfDeath + 'T00:00:00').toLocaleDateString() : null, col3, y, 100);
+  writeField('Weight', t.weight ? `${t.weight} lbs` : null, col4, y, 80);
+  y += 28;
 
   // ── Transport ────────────────────────────────────────────────────────────
   y = sectionHeader('Transport', y);
-  writeField('Pickup Address', t.pickupLocation, 50, y, 200);
-  writeField('Pickup Type', t.pickupLocationType, 270, y, 130);
-  writeField('Pickup Contact', t.pickupContact, 50, y + 40, 200);
-  writeField('Pickup Phone', t.pickupPhone, 270, y + 40, 130);
-  y += 80;
-  writeField('Destination', t.destination, 50, y, 200);
-  writeField('Dest. Type', t.destinationLocationType, 270, y, 130);
-  writeField('Dest. Contact', t.destinationContact, 50, y + 40, 200);
-  writeField('Dest. Phone', t.destinationPhone, 270, y + 40, 130);
-  y += 80;
+  writeField('Pickup Address', t.pickupLocation, col1, y, 170);
+  writeField('Type', t.pickupLocationType, col2, y, 140);
+  writeField('Contact', t.pickupContact, col3, y, 110);
+  writeField('Phone', t.pickupPhone, col4, y, 100);
+  y += 28;
+  writeField('Destination', t.destination, col1, y, 170);
+  writeField('Type', t.destinationLocationType, col2, y, 140);
+  writeField('Contact', t.destinationContact, col3, y, 110);
+  writeField('Phone', t.destinationPhone, col4, y, 100);
+  y += 28;
 
   // ── Funeral Home ──────────────────────────────────────────────────────────
   y = sectionHeader('Funeral Home', y);
-  writeField('Name', t.funeralHomeName, 50, y, 250);
-  writeField('Phone', t.funeralHomePhone, 320, y, 150);
-  y += 40;
+  writeField('Name', t.funeralHomeName, col1, y, 280);
+  writeField('Phone', t.funeralHomePhone, col3, y, 150);
+  y += 28;
 
   // ── Operations ───────────────────────────────────────────────────────────
   y = sectionHeader('Operations', y);
-  writeField('Driver', row.driver_name, 50, y, 130);
-  writeField('Vehicle', row.vehicle_name, 200, y, 130);
-  writeField('Est. Miles', t.estimatedMiles ? `${t.estimatedMiles} mi` : null, 350, y, 100);
-  writeField('Actual Miles', t.actualMiles ? `${t.actualMiles} mi` : null, 460, y, 100);
-  y += 40;
-  writeField('Scheduled', t.scheduledPickupAt ? new Date(t.scheduledPickupAt).toLocaleString() : null, 50, y, 200);
-  writeField('Completed', t.completedAt ? new Date(t.completedAt).toLocaleString() : null, 270, y, 200);
-  y += 40;
+  writeField('Driver', row.driver_name, col1, y, 170);
+  writeField('Vehicle', row.vehicle_name, col2, y, 140);
+  writeField('Est. Miles', t.estimatedMiles ? `${t.estimatedMiles} mi` : null, col3, y, 100);
+  writeField('Actual Miles', t.actualMiles ? `${t.actualMiles} mi` : null, col4, y, 80);
+  y += 28;
+  writeField('Scheduled', t.scheduledPickupAt ? new Date(t.scheduledPickupAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null, col1, y, 170);
+  writeField('Completed', t.completedAt ? new Date(t.completedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null, col2, y, 140);
+  y += 28;
 
   // ── Timeline ─────────────────────────────────────────────────────────────
   y = sectionHeader('Timeline', y);
   const steps = [
     { label: 'Accepted', ts: t.acceptedAt },
     { label: 'En Route', ts: t.enRouteAt },
-    { label: 'Arrived', ts: t.arrivedAt },
-    { label: 'Loaded', ts: t.loadedAt },
-    { label: 'Completed', ts: t.completedAt },
+    { label: 'Arrived',  ts: t.arrivedAt  },
+    { label: 'Loaded',   ts: t.loadedAt   },
+    { label: 'Completed',ts: t.completedAt},
   ];
   const stepW = W / 5;
   steps.forEach((step, i) => {
-    const sx = 50 + i * stepW;
-    doc.fontSize(8).fillColor(DARK_GRAY).font('Helvetica-Bold').text(step.label, sx, y, { width: stepW });
+    const sx = ML + i * stepW;
     const tsStr = step.ts ? new Date(step.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
-    doc.fontSize(8).fillColor(step.ts ? BLACK : LIGHT_GRAY).font('Helvetica').text(tsStr, sx, y + 12, { width: stepW });
+    doc.fontSize(6.5).fillColor(MID_GRAY).font('Helvetica-Bold').text(step.label.toUpperCase(), sx, y, { width: stepW - 4 });
+    doc.fontSize(8).fillColor(step.ts ? BLACK : LIGHT_GRAY).font('Helvetica').text(tsStr, sx, y + 9, { width: stepW - 4, lineBreak: false });
   });
-  y += 40;
+  y += 28;
 
   // ── Notes ─────────────────────────────────────────────────────────────────
   if (t.notes) {
     y = sectionHeader('Notes', y);
-    doc.fontSize(10).fillColor(BLACK).font('Helvetica').text(t.notes, 50, y, { width: W });
-    y += doc.heightOfString(t.notes, { width: W }) + 20;
+    doc.fontSize(8).fillColor(BLACK).font('Helvetica').text(t.notes, ML, y, { width: W });
+    y += Math.min(doc.heightOfString(t.notes, { width: W, fontSize: 8 }), 40) + 8;
   }
 
-  // ── Footer ────────────────────────────────────────────────────────────────
-  const footerY = doc.page.height - 60;
-  doc.moveTo(50, footerY).lineTo(50 + W, footerY).lineWidth(0.5).strokeColor('#cccccc').stroke();
-  doc.fontSize(8).fillColor(LIGHT_GRAY).text(
+  // ── Footer pinned near bottom ──────────────────────────────────────────
+  const footerY = doc.page.height - 30;
+  hRule(footerY - 10);
+  doc.fontSize(7).fillColor(LIGHT_GRAY).text(
     `Generated by FirstCallRemovals.com · ${new Date().toLocaleString()}`,
-    50, footerY + 10, { align: 'center', width: W }
+    ML, footerY - 4, { align: 'center', width: W }
   );
 
   doc.end();
