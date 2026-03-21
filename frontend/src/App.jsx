@@ -1088,6 +1088,7 @@ const FuneralTransportApp = () => {
   const [invoices, setInvoices] = useState([]);
   const [invoicesFilter, setInvoicesFilter] = useState('all');
   const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [pendingInvoiceCount, setPendingInvoiceCount] = useState(0);
   const [showCreateInvoice, setShowCreateInvoice] = useState(false);
   const [invoiceForm, setInvoiceForm] = useState({ transportId: '', funeralHomeName: '', funeralHomeEmail: '', decedentName: '', pickupFee: '', mileageFee: '', obFee: '', adminFee: '10', totalCost: '', actualMiles: '', notes: '', dueDate: '', paymentStatus: 'due' });
   const [invoiceError, setInvoiceError] = useState('');
@@ -1128,6 +1129,11 @@ const FuneralTransportApp = () => {
       setVehicles(vehiclesRes.vehicles || []);
       setFuneralHomes(fhRes.funeralHomes || []);
       setLastRefresh(new Date());
+      // Fetch invoice counts for badge (admin only)
+      try {
+        const { counts } = await apiRequest('GET', '/invoices/counts');
+        setPendingInvoiceCount((counts.draft || 0) + (counts.approved || 0));
+      } catch (_) {}
     } catch (err) {
       setApiError(err.message);
     }
@@ -1385,6 +1391,13 @@ const FuneralTransportApp = () => {
     }
   }, []);
 
+  const fetchInvoiceCounts = useCallback(async () => {
+    try {
+      const { counts } = await apiRequest('GET', '/invoices/counts');
+      setPendingInvoiceCount((counts.draft || 0) + (counts.approved || 0));
+    } catch (_) {}
+  }, []);
+
   const fetchInvoices = useCallback(async (status) => {
     setInvoicesLoading(true);
     try {
@@ -1396,7 +1409,9 @@ const FuneralTransportApp = () => {
     } finally {
       setInvoicesLoading(false);
     }
-  }, []);
+    // Also refresh counts
+    fetchInvoiceCounts();
+  }, [fetchInvoiceCounts]);
 
   const handleCreateInvoice = async () => {
     setInvoiceError('');
@@ -1420,6 +1435,7 @@ const FuneralTransportApp = () => {
       setShowCreateInvoice(false);
       setInvoicePreview(null);
       setInvoiceForm({ transportId: '', funeralHomeName: '', funeralHomeEmail: '', decedentName: '', pickupFee: '', mileageFee: '', obFee: '', adminFee: '10', totalCost: '', actualMiles: '', notes: '', dueDate: '', paymentStatus: 'due' });
+      fetchInvoiceCounts();
     } catch (err) {
       setInvoiceError(err.message);
     }
@@ -1429,6 +1445,7 @@ const FuneralTransportApp = () => {
     try {
       const { invoice } = await apiRequest('PUT', `/invoices/${id}/approve`);
       setInvoices(prev => prev.map(i => i.id === id ? invoice : i));
+      fetchInvoiceCounts();
     } catch (err) { setApiError(err.message); }
   };
 
@@ -1436,6 +1453,24 @@ const FuneralTransportApp = () => {
     try {
       const { invoice } = await apiRequest('PUT', `/invoices/${id}/send`);
       setInvoices(prev => prev.map(i => i.id === id ? invoice : i));
+      fetchInvoiceCounts();
+    } catch (err) { setApiError(err.message); }
+  };
+
+  const handleMarkPaidInvoice = async (id) => {
+    try {
+      const { invoice } = await apiRequest('PUT', `/invoices/${id}/mark-paid`);
+      setInvoices(prev => prev.map(i => i.id === id ? invoice : i));
+      fetchInvoiceCounts();
+    } catch (err) { setApiError(err.message); }
+  };
+
+  const handleVoidInvoice = async (id) => {
+    if (!window.confirm('Void this invoice? This cannot be undone.')) return;
+    try {
+      const { invoice } = await apiRequest('PUT', `/invoices/${id}/void`);
+      setInvoices(prev => prev.map(i => i.id === id ? invoice : i));
+      fetchInvoiceCounts();
     } catch (err) { setApiError(err.message); }
   };
 
@@ -1918,7 +1953,7 @@ const FuneralTransportApp = () => {
                     <Building2 className="w-4 h-4 inline mr-1" />Funeral Homes
                   </TabBtn>
                   <TabBtn active={activeTab === 'invoices'} onClick={() => setActiveTab('invoices')}>
-                    🧾 Invoices
+                    🧾 Invoices{pendingInvoiceCount > 0 && <span className="ml-1 bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingInvoiceCount}</span>}
                   </TabBtn>
                 </>
               )}
@@ -2654,6 +2689,8 @@ const FuneralTransportApp = () => {
             onCreate={handleCreateInvoice}
             onApprove={handleApproveInvoice}
             onSend={handleSendInvoice}
+            onMarkPaid={handleMarkPaidInvoice}
+            onVoid={handleVoidInvoice}
           />
         )}
 
@@ -2968,9 +3005,11 @@ const EditTransportModal = ({ transport, drivers, vehicles, onClose, onSave }) =
 // ─── Invoices Panel ──────────────────────────────────────────────────────────
 
 const INVOICE_STATUS_COLORS = {
-  draft: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  draft: 'bg-gray-100 text-gray-700 border-gray-300',
   approved: 'bg-blue-100 text-blue-800 border-blue-300',
-  sent: 'bg-green-100 text-green-800 border-green-300',
+  sent: 'bg-amber-100 text-amber-800 border-amber-300',
+  paid: 'bg-green-100 text-green-800 border-green-300',
+  void: 'bg-red-100 text-red-700 border-red-300 line-through',
 };
 
 const InvoiceDocCount = ({ transportId }) => {
@@ -3089,7 +3128,7 @@ function buildInvoiceHtmlClient(inv) {
   </div>`;
 }
 
-const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, showCreateInvoice, setShowCreateInvoice, invoiceForm, setInvoiceForm, invoiceError, invoicePreview, invoicePreviewLoading, viewingInvoice, setViewingInvoice, onFetch, setInvoicesFilter, onCreate, onApprove, onSend }) => {
+const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, showCreateInvoice, setShowCreateInvoice, invoiceForm, setInvoiceForm, invoiceError, invoicePreview, invoicePreviewLoading, viewingInvoice, setViewingInvoice, onFetch, setInvoicesFilter, onCreate, onApprove, onSend, onMarkPaid, onVoid }) => {
   useEffect(() => { onFetch(invoicesFilter); }, [invoicesFilter]);
 
   const completedTransports = transports.filter(t => t.status === 'Completed');
@@ -3110,7 +3149,11 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
     });
   };
 
-  const filtered = invoices.filter(inv => invoicesFilter === 'all' || inv.status === invoicesFilter);
+  const filtered = invoices.filter(inv => {
+    if (invoicesFilter === 'all') return true;
+    if (invoicesFilter === 'pending') return inv.status === 'draft' || inv.status === 'approved';
+    return inv.status === invoicesFilter;
+  });
 
     // Build a live preview data object from the current form + preview data
   const livePreviewData = invoicePreview ? {
@@ -3139,10 +3182,16 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
 
       {/* Filter tabs */}
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-        {['all', 'draft', 'approved', 'sent'].map(f => (
-          <button key={f} onClick={() => setInvoicesFilter(f)}
-            className={`flex-1 py-1.5 text-xs font-medium rounded-md capitalize transition-colors ${invoicesFilter === f ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-            {f}
+        {[
+          { key: 'all', label: 'All' },
+          { key: 'pending', label: 'Pending' },
+          { key: 'sent', label: 'Sent' },
+          { key: 'paid', label: 'Paid' },
+          { key: 'void', label: 'Void' },
+        ].map(({ key, label }) => (
+          <button key={key} onClick={() => setInvoicesFilter(key)}
+            className={`flex-1 py-1.5 text-xs font-medium rounded-md capitalize transition-colors ${invoicesFilter === key ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+            {label}
           </button>
         ))}
       </div>
@@ -3179,6 +3228,18 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
 
               {invoiceForm.transportId && !invoicePreviewLoading && (
                 <>
+                  {/* Case # info — distinct from Invoice # */}
+                  {invoicePreview && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+                      <div className="font-semibold text-blue-800 mb-1">Transport Details</div>
+                      <div className="text-blue-700">
+                        <span className="font-medium">Case #</span> {invoicePreview.caseNumber || '—'}{' '}
+                        <span className="text-blue-400 text-xs">(transport control number from STAT MCS form)</span>
+                      </div>
+                      <div className="text-blue-500 text-xs mt-1">Invoice # will be assigned automatically on save (1001, 1002, …)</div>
+                    </div>
+                  )}
+
                   {/* Editable fields */}
                   <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-lg p-3">
                     <div className="col-span-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Adjust Fees</div>
@@ -3266,26 +3327,63 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-2 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl my-4">
             <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10 rounded-t-xl">
-              <h3 className="font-semibold text-gray-900">Invoice #{viewingInvoice.invoiceNumber || viewingInvoice.id}</h3>
+              <div>
+                <h3 className="font-semibold text-gray-900">
+                  Invoice #{viewingInvoice.invoiceNumber || viewingInvoice.id}
+                  {viewingInvoice.caseNumber && <span className="text-gray-400 font-normal ml-2">— Case #{viewingInvoice.caseNumber}</span>}
+                </h3>
+                <span className={`text-xs px-2 py-0.5 rounded-full border font-medium capitalize ${INVOICE_STATUS_COLORS[viewingInvoice.status] || 'bg-gray-100 text-gray-700 border-gray-300'}`}>
+                  {viewingInvoice.status}
+                </span>
+              </div>
               <button onClick={() => setViewingInvoice(null)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
             </div>
             <div className="p-4">
               <div
                 dangerouslySetInnerHTML={{ __html: buildInvoiceHtmlClient(viewingInvoice) }}
               />
-              <div className="flex gap-2 mt-4 pt-4 border-t">
+              <div className="flex gap-2 mt-4 pt-4 border-t flex-wrap">
                 {viewingInvoice.status === 'draft' && (
-                  <button onClick={() => { onApprove(viewingInvoice.id); setViewingInvoice(null); }}
-                    className="flex-1 text-sm bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 font-medium">
-                    ✅ Approve
-                  </button>
+                  <>
+                    <button onClick={() => { onApprove(viewingInvoice.id); setViewingInvoice(null); }}
+                      className="flex-1 text-sm bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 font-medium">
+                      ✅ Approve
+                    </button>
+                    <button onClick={() => { onVoid(viewingInvoice.id); setViewingInvoice(null); }}
+                      className="text-sm bg-red-50 text-red-600 border border-red-200 py-2 px-4 rounded-lg hover:bg-red-100 font-medium">
+                      🚫 Void
+                    </button>
+                  </>
                 )}
-                {(viewingInvoice.status === 'approved' || viewingInvoice.status === 'sent') && (
-                  <button onClick={() => { onSend(viewingInvoice.id); setViewingInvoice(null); }}
-                    disabled={!viewingInvoice.funeralHomeEmail}
-                    className="flex-1 text-sm bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 font-medium disabled:opacity-40">
-                    {viewingInvoice.status === 'sent' ? '📧 Resend' : '📧 Send Email'}
-                  </button>
+                {viewingInvoice.status === 'approved' && (
+                  <>
+                    <button onClick={() => { onSend(viewingInvoice.id); setViewingInvoice(null); }}
+                      disabled={!viewingInvoice.funeralHomeEmail}
+                      className="flex-1 text-sm bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 font-medium disabled:opacity-40">
+                      📧 Send Email
+                    </button>
+                    <button onClick={() => { onVoid(viewingInvoice.id); setViewingInvoice(null); }}
+                      className="text-sm bg-red-50 text-red-600 border border-red-200 py-2 px-4 rounded-lg hover:bg-red-100 font-medium">
+                      🚫 Void
+                    </button>
+                  </>
+                )}
+                {viewingInvoice.status === 'sent' && (
+                  <>
+                    <button onClick={() => { onMarkPaid(viewingInvoice.id); setViewingInvoice(null); }}
+                      className="flex-1 text-sm bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 font-medium">
+                      💰 Mark Paid
+                    </button>
+                    <button onClick={() => { onSend(viewingInvoice.id); }}
+                      disabled={!viewingInvoice.funeralHomeEmail}
+                      className="text-sm border border-gray-300 text-gray-600 py-2 px-4 rounded-lg hover:bg-gray-50 font-medium disabled:opacity-40">
+                      📧 Resend
+                    </button>
+                    <button onClick={() => { onVoid(viewingInvoice.id); setViewingInvoice(null); }}
+                      className="text-sm bg-red-50 text-red-600 border border-red-200 py-2 px-4 rounded-lg hover:bg-red-100 font-medium">
+                      🚫 Void
+                    </button>
+                  </>
                 )}
                 <button onClick={() => setViewingInvoice(null)}
                   className="flex-1 text-sm border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50">
@@ -3303,53 +3401,98 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <FileText className="w-12 h-12 mx-auto mb-2 opacity-30" />
-          <p>No invoices {invoicesFilter !== 'all' ? `with status "${invoicesFilter}"` : ''}</p>
+          <p>No invoices {invoicesFilter !== 'all' ? `in "${invoicesFilter}"` : ''}</p>
         </div>
       ) : (
         <div className="space-y-2">
           {filtered.map(inv => (
             <div key={inv.id} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+              {/* Header row: Invoice# | Case# | Status badge | Total | Date */}
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <span className={`text-xs px-2 py-0.5 rounded-full border font-medium capitalize ${INVOICE_STATUS_COLORS[inv.status] || 'bg-gray-100 text-gray-700 border-gray-300'}`}>
                       {inv.status}
                     </span>
-                    {inv.invoiceNumber && <span className="text-xs font-mono font-semibold text-gray-600">#{inv.invoiceNumber}</span>}
-                    <span className="text-xs font-mono text-gray-400">{inv.transportId}</span>
+                    {inv.invoiceNumber && (
+                      <span className="text-sm font-bold text-gray-800">Invoice #{inv.invoiceNumber}</span>
+                    )}
+                    {inv.caseNumber && (
+                      <span className="text-sm font-mono text-gray-500">— Case #{inv.caseNumber}</span>
+                    )}
                   </div>
                   <p className="font-semibold text-gray-900">{inv.decedentName || '—'}</p>
-                  {inv.caseNumber && <p className="text-xs text-gray-500">Case# {inv.caseNumber}</p>}
-                  <p className="text-sm text-gray-500">{inv.funeralHomeName}</p>
-                  {inv.funeralHomeEmail && <p className="text-xs text-gray-400">{inv.funeralHomeEmail}</p>}
-                  {inv.sentAt && <p className="text-xs text-green-600 mt-0.5">Sent {new Date(inv.sentAt).toLocaleDateString()}</p>}
+                  <p className="text-sm text-gray-500">{inv.funeralHomeName || '—'}</p>
+                  {inv.paidAt && <p className="text-xs text-green-600 mt-0.5">Paid {new Date(inv.paidAt).toLocaleDateString()}</p>}
+                  {inv.sentAt && !inv.paidAt && <p className="text-xs text-amber-600 mt-0.5">Sent {new Date(inv.sentAt).toLocaleDateString()}</p>}
                   {inv.approvedAt && !inv.sentAt && <p className="text-xs text-blue-600 mt-0.5">Approved {new Date(inv.approvedAt).toLocaleDateString()} by {inv.approvedBy}</p>}
+                  {inv.voidedAt && <p className="text-xs text-red-500 mt-0.5">Voided {new Date(inv.voidedAt).toLocaleDateString()}</p>}
                 </div>
                 <div className="flex-shrink-0 text-right">
                   <p className="text-lg font-bold text-gray-900">${parseFloat(inv.totalCost || 0).toFixed(2)}</p>
                   <p className="text-xs text-gray-400">{new Date(inv.createdAt).toLocaleDateString()}</p>
-                  {inv.paymentStatus === 'paid' && <span className="text-xs text-green-600 font-medium">PAID</span>}
                 </div>
               </div>
-              <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+
+              {/* Action buttons per status */}
+              <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100 flex-wrap">
+                {/* Preview always available */}
                 <button onClick={() => setViewingInvoice(inv)}
-                  className="flex-1 text-xs border border-gray-200 text-gray-600 py-1.5 px-3 rounded-lg hover:bg-gray-50 font-medium">
-                  👁 View
+                  className="text-xs border border-gray-200 text-gray-600 py-1.5 px-3 rounded-lg hover:bg-gray-50 font-medium">
+                  👁 Preview
                 </button>
+
+                {/* Draft actions */}
                 {inv.status === 'draft' && (
-                  <button onClick={() => onApprove(inv.id)}
-                    className="flex-1 text-xs bg-blue-600 text-white py-1.5 px-3 rounded-lg hover:bg-blue-700 font-medium">
-                    ✅ Approve
-                  </button>
+                  <>
+                    <button onClick={() => onApprove(inv.id)}
+                      className="text-xs bg-blue-600 text-white py-1.5 px-3 rounded-lg hover:bg-blue-700 font-medium">
+                      ✅ Approve
+                    </button>
+                    <button onClick={() => onVoid(inv.id)}
+                      className="text-xs bg-red-50 text-red-600 border border-red-200 py-1.5 px-3 rounded-lg hover:bg-red-100 font-medium">
+                      🚫 Void
+                    </button>
+                  </>
                 )}
-                {(inv.status === 'approved' || inv.status === 'sent') && (
-                  <button onClick={() => onSend(inv.id)}
-                    disabled={!inv.funeralHomeEmail}
-                    className="flex-1 text-xs bg-green-600 text-white py-1.5 px-3 rounded-lg hover:bg-green-700 font-medium disabled:opacity-40"
-                    title={!inv.funeralHomeEmail ? 'Add email to send' : ''}>
-                    {inv.status === 'sent' ? '📧 Resend' : '📧 Send'}
-                  </button>
+
+                {/* Approved actions */}
+                {inv.status === 'approved' && (
+                  <>
+                    <button onClick={() => onSend(inv.id)}
+                      disabled={!inv.funeralHomeEmail}
+                      className="text-xs bg-green-600 text-white py-1.5 px-3 rounded-lg hover:bg-green-700 font-medium disabled:opacity-40"
+                      title={!inv.funeralHomeEmail ? 'Add email to send' : ''}>
+                      📧 Send
+                    </button>
+                    <button onClick={() => onVoid(inv.id)}
+                      className="text-xs bg-red-50 text-red-600 border border-red-200 py-1.5 px-3 rounded-lg hover:bg-red-100 font-medium">
+                      🚫 Void
+                    </button>
+                  </>
                 )}
+
+                {/* Sent actions */}
+                {inv.status === 'sent' && (
+                  <>
+                    <button onClick={() => onMarkPaid(inv.id)}
+                      className="text-xs bg-green-600 text-white py-1.5 px-3 rounded-lg hover:bg-green-700 font-medium">
+                      💰 Mark Paid
+                    </button>
+                    <button onClick={() => onSend(inv.id)}
+                      disabled={!inv.funeralHomeEmail}
+                      className="text-xs border border-gray-300 text-gray-600 py-1.5 px-3 rounded-lg hover:bg-gray-50 font-medium disabled:opacity-40"
+                      title={!inv.funeralHomeEmail ? 'No email on file' : ''}>
+                      📧 Resend
+                    </button>
+                    <button onClick={() => onVoid(inv.id)}
+                      className="text-xs bg-red-50 text-red-600 border border-red-200 py-1.5 px-3 rounded-lg hover:bg-red-100 font-medium">
+                      🚫 Void
+                    </button>
+                  </>
+                )}
+
+                {/* Paid / Void: view only — no further actions */}
               </div>
             </div>
           ))}

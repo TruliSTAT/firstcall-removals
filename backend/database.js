@@ -252,7 +252,7 @@ function migrateDb(db) {
 
   // Settings table (for invoice sequence, etc.)
   db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);`);
-  db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_seq', '785')`).run();
+  db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_seq', '1000')`).run();
 
   // Invoice table: add new columns if missing
   const invoiceNewCols = [
@@ -272,6 +272,8 @@ function migrateDb(db) {
     ['customer_zip', 'TEXT'],
     ['line_items', 'TEXT'],
     ['payment_status', "TEXT DEFAULT 'due'"],
+    ['paid_at', 'TEXT'],
+    ['voided_at', 'TEXT'],
   ];
   for (const [col, type] of invoiceNewCols) {
     try { db.exec(`ALTER TABLE invoices ADD COLUMN ${col} ${type}`); } catch (_) {}

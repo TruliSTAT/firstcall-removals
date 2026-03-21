@@ -42,18 +42,21 @@ function rowToInvoice(row) {
     approvedAt: row.approved_at,
     sentAt: row.sent_at,
     approvedBy: row.approved_by,
+    paidAt: row.paid_at,
+    voidedAt: row.voided_at,
   };
 }
 
 function nextInvoiceNumber(db) {
   // Ensure settings table exists
   db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);`);
-  db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_seq', '785')`).run();
+  db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_seq', '1000')`).run();
 
   const row = db.prepare(`SELECT value FROM settings WHERE key='invoice_seq'`).get();
   const next = parseInt(row.value) + 1;
   db.prepare(`UPDATE settings SET value = ? WHERE key = 'invoice_seq'`).run(String(next));
-  return String(next).padStart(4, '0');
+  // Plain sequential integer (not zero-padded)
+  return String(next);
 }
 
 function buildLineItems(t) {
@@ -308,12 +311,27 @@ router.get('/preview/:transportId', authenticateToken, requireRole('admin'), (re
   res.json({ preview: data });
 });
 
+// GET /api/invoices/counts — returns count by status bucket
+router.get('/counts', authenticateToken, requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`SELECT status, COUNT(*) as count FROM invoices GROUP BY status`).all();
+  const counts = { draft: 0, approved: 0, sent: 0, paid: 0, void: 0, all: 0 };
+  for (const r of rows) {
+    if (counts[r.status] !== undefined) counts[r.status] = r.count;
+    counts.all += r.count;
+  }
+  counts.pending = counts.draft + counts.approved;
+  res.json({ counts });
+});
+
 // GET /api/invoices
 router.get('/', authenticateToken, requireRole('admin'), (req, res) => {
   const db = getDb();
   const { status } = req.query;
   let rows;
-  if (status) {
+  if (status === 'pending') {
+    rows = db.prepare(`SELECT * FROM invoices WHERE status IN ('draft','approved') ORDER BY created_at DESC`).all();
+  } else if (status) {
     rows = db.prepare('SELECT * FROM invoices WHERE status = ? ORDER BY created_at DESC').all(status);
   } else {
     rows = db.prepare('SELECT * FROM invoices ORDER BY created_at DESC').all();
@@ -411,7 +429,7 @@ router.put('/:id/approve', authenticateToken, requireRole('admin'), (req, res) =
   const db = getDb();
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-  if (inv.status === 'sent') return res.status(400).json({ error: 'Invoice already sent' });
+  if (['sent', 'paid', 'void'].includes(inv.status)) return res.status(400).json({ error: `Cannot approve invoice with status: ${inv.status}` });
 
   db.prepare(`UPDATE invoices SET status = 'approved', approved_at = ?, approved_by = ? WHERE id = ?`)
     .run(new Date().toISOString(), req.user.username, id);
@@ -428,6 +446,7 @@ router.put('/:id/send', authenticateToken, requireRole('admin'), async (req, res
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
   if (!inv.funeral_home_email) return res.status(400).json({ error: 'No email address on invoice' });
   if (inv.status === 'draft') return res.status(400).json({ error: 'Invoice must be approved before sending' });
+  if (['paid', 'void'].includes(inv.status)) return res.status(400).json({ error: `Cannot send invoice with status: ${inv.status}` });
 
   const lineItems = inv.line_items ? JSON.parse(inv.line_items) : [];
   const invoiceHtml = buildInvoiceHtml(inv, lineItems);
@@ -465,13 +484,43 @@ router.put('/:id/send', authenticateToken, requireRole('admin'), async (req, res
   }
 });
 
+// PUT /api/invoices/:id/mark-paid — mark invoice as paid
+router.put('/:id/mark-paid', authenticateToken, requireRole('admin'), (req, res) => {
+  const { id } = req.params;
+  const db = getDb();
+  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  if (inv.status === 'void') return res.status(400).json({ error: 'Cannot mark a voided invoice as paid' });
+
+  db.prepare(`UPDATE invoices SET status = 'paid', paid_at = ? WHERE id = ?`)
+    .run(new Date().toISOString(), id);
+
+  const row = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+  res.json({ invoice: rowToInvoice(row) });
+});
+
+// PUT /api/invoices/:id/void — void an invoice (admin only)
+router.put('/:id/void', authenticateToken, requireRole('admin'), (req, res) => {
+  const { id } = req.params;
+  const db = getDb();
+  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  if (inv.status === 'paid') return res.status(400).json({ error: 'Cannot void a paid invoice' });
+
+  db.prepare(`UPDATE invoices SET status = 'void', voided_at = ? WHERE id = ?`)
+    .run(new Date().toISOString(), id);
+
+  const row = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+  res.json({ invoice: rowToInvoice(row) });
+});
+
 // PUT /api/invoices/:id — update draft fields
 router.put('/:id', authenticateToken, requireRole('admin'), (req, res) => {
   const { id } = req.params;
   const db = getDb();
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
-  if (inv.status === 'sent') return res.status(400).json({ error: 'Cannot edit a sent invoice' });
+  if (['sent', 'paid', 'void'].includes(inv.status)) return res.status(400).json({ error: `Cannot edit invoice with status: ${inv.status}` });
 
   const {
     funeralHomeName, funeralHomeEmail, decedentName, decedentDob,
