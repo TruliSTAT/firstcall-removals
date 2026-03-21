@@ -3967,8 +3967,8 @@ const DocumentsPanel = ({ transports }) => {
 
       const witnessSig = fv.witness_signature || null;
       const sigHtml = witnessSig
-        ? `<img src="${witnessSig}" style="height:28px;border-bottom:1px solid #333;margin-left:4px;vertical-align:bottom">`
-        : `<span class="field-value" style="min-width:200px;display:inline-block">&nbsp;</span>`;
+        ? `<img src="${witnessSig}" style="max-height:20px;border-bottom:0.5px solid #666;margin-left:4px;vertical-align:bottom">`
+        : `<span class="field-value" style="min-width:150px;display:inline-block">&nbsp;</span>`;
 
       const effRowsHtml = effectsRows.map(r =>
         `<tr>
@@ -3985,41 +3985,43 @@ const DocumentsPanel = ({ transports }) => {
 
       printDiv.innerHTML = `
         <style>
-          @page { size: letter portrait; margin: 0.45in; }
+          @page { size: letter portrait; margin: 0.3in; }
+          * { box-sizing: border-box; }
           @media print { body > *:not(#fcr-print-doc) { display: none !important; } #fcr-print-doc { display: block !important; } }
-          #fcr-print-doc { font-family: Arial, sans-serif; font-size: 10pt; color: #111; }
-          .form-header { display: flex; justify-content: space-between; align-items: flex-start; border: 2px solid #333; padding: 6px 10px 6px 8px; }
-          .form-header .logo-block { display: flex; align-items: flex-start; gap: 8px; }
-          .form-header .logo-wings { font-size: 28pt; line-height: 1; color: #1a3a6b; }
-          .form-header .company-name { font-size: 13pt; font-weight: bold; line-height: 1.2; }
-          .form-header .company-sub { font-size: 8pt; color: #333; }
-          .form-header .contact-info { font-size: 8.5pt; text-align: right; line-height: 1.6; }
-          .form-header .control-num { margin-top: 4px; font-size: 9pt; }
-          .form-section { border: 1px solid #333; border-bottom: none; padding: 4px 8px; }
+          body { margin: 0; padding: 0; }
+          #fcr-print-doc { font-family: Arial, sans-serif; font-size: 7.5pt; line-height: 1.2; color: #111; max-width: 100%; padding: 0; transform: scale(0.97); transform-origin: top left; }
+          .form-header { display: flex; justify-content: space-between; align-items: flex-start; border: 2px solid #333; padding: 3px 6px; }
+          .form-header .logo-block { display: flex; align-items: flex-start; gap: 5px; }
+          .form-header .logo-wings { font-size: 18pt; line-height: 1; color: #1a3a6b; }
+          .form-header .company-name { font-size: 12pt; font-weight: bold; line-height: 1.2; }
+          .form-header .company-sub { font-size: 7pt; color: #333; }
+          .form-header .contact-info { font-size: 7pt; text-align: right; line-height: 1.4; }
+          .form-header .control-num { margin-top: 2px; font-size: 7pt; }
+          .form-section { border: 1px solid #333; border-bottom: none; padding: 2px 4px; page-break-inside: avoid; }
           .form-section.last { border-bottom: 1px solid #333; }
-          .section-row { display: flex; gap: 14px; align-items: baseline; margin: 2px 0; flex-wrap: nowrap; }
-          .field-label { font-size: 8pt; font-weight: bold; white-space: nowrap; }
-          .field-value { border-bottom: 1px solid #333; min-width: 80px; flex: 1; font-size: 10pt; padding: 0 2px; display: inline-block; min-height: 14px; }
-          .field-value.short { min-width: 40px; flex: none; }
-          .yn-box { display: inline-block; border: 1px solid #333; width: 16px; height: 14px; text-align: center; font-size: 8.5pt; line-height: 14px; margin: 0 1px; font-weight: bold; }
+          .section-row { display: flex; gap: 6px; align-items: baseline; margin: 1px 0; flex-wrap: nowrap; }
+          .field-label { font-size: 6.5pt; font-weight: bold; white-space: nowrap; }
+          .field-value { border-bottom: 0.5px solid #666; min-width: 60px; flex: 1; font-size: 7.5pt; padding: 0 1px; display: inline-block; min-height: 11px; }
+          .field-value.short { min-width: 30px; flex: none; }
+          .yn-box { display: inline-block; border: 1px solid #333; width: 13px; height: 11px; text-align: center; font-size: 7pt; line-height: 11px; margin: 0 1px; font-weight: bold; }
           .yn-box.selected { background: #333; color: white; }
-          .loc-option { display: inline-block; border: 1px solid #555; padding: 1px 5px; margin: 1px 2px; font-size: 8pt; }
+          .loc-option { display: inline-block; border: 1px solid #555; padding: 0 3px; margin: 0 1px; font-size: 6.5pt; }
           .loc-option.selected { background: #333; color: white; }
-          .two-col { display: flex; border: 1px solid #333; border-bottom: none; }
-          .two-col .left { flex: 1; padding: 4px 8px; border-right: 1px solid #333; }
-          .two-col .right { width: 210px; padding: 4px 8px; }
-          .two-col .left .section-row { margin: 1px 0; }
-          .two-col .right .inj-row { display: flex; gap: 6px; align-items: baseline; margin: 1px 0; }
+          .two-col { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #333; border-bottom: none; page-break-inside: avoid; }
+          .two-col .left { padding: 2px 4px; border-right: 1px solid #333; }
+          .two-col .right { padding: 2px 4px; }
+          .two-col .left .section-row { margin: 0.5px 0; }
+          .two-col .right .inj-row { display: flex; gap: 4px; align-items: baseline; margin: 0.5px 0; }
           .effects-table { width: 100%; border-collapse: collapse; }
-          .effects-table th, .effects-table td { border: 1px solid #333; padding: 2px 4px; font-size: 8pt; }
+          .effects-table th, .effects-table td { border: 1px solid #333; padding: 1px 2px; font-size: 6.5pt; height: 14px; }
           .effects-table th { background: #eee; font-weight: bold; text-align: center; }
-          .effects-table td:first-child { text-align: center; width: 24px; }
-          .effects-table td:nth-child(2) { width: 36px; }
-          .effects-table td:nth-child(4) { width: 70px; }
-          .effects-table td:nth-child(5) { width: 70px; }
-          .compliance { font-size: 7pt; color: #444; text-align: center; border: 1px solid #333; border-bottom: none; padding: 3px 8px; }
+          .effects-table td:first-child { text-align: center; width: 18px; }
+          .effects-table td:nth-child(2) { width: 28px; }
+          .effects-table td:nth-child(4) { width: 60px; }
+          .effects-table td:nth-child(5) { width: 55px; }
+          .compliance { font-size: 6pt; color: #777; text-align: center; border: 1px solid #333; border-bottom: none; padding: 2px 4px; white-space: nowrap; overflow: hidden; }
           .compliance.last { border-bottom: 1px solid #333; }
-          .section-title { font-size: 8pt; font-weight: bold; text-transform: uppercase; margin-bottom: 2px; }
+          .section-title { font-size: 6.5pt; font-weight: bold; text-transform: uppercase; margin-bottom: 1px; }
         </style>
 
         <!-- HEADER -->
@@ -4149,12 +4151,12 @@ const DocumentsPanel = ({ transports }) => {
             <div class="section-row"><span class="field-label">Phone # NOK:</span><span class="field-value">${val('nok_phone')}</span></div>
             <div class="section-row"><span class="field-label">Relationship:</span><span class="field-value">${val('nok_relationship')}</span></div>
             <div class="section-row"><span class="field-label">Email of NOK:</span><span class="field-value">${val('nok_email')}</span></div>
-            <div style="margin:4px 0 2px"><hr style="border:none;border-top:1px solid #ccc"></div>
+            <div style="margin:2px 0 1px"><hr style="border:none;border-top:0.5px solid #ccc"></div>
             <div class="section-row"><span class="field-label">Doctor signing DC:</span><span class="field-value">${val('doctor_name')}</span></div>
             <div class="section-row"><span class="field-label">DR. Phone #:</span><span class="field-value">${val('doctor_phone')}</span></div>
             <div class="section-row"><span class="field-label">Releasing Authority:</span><span class="field-value">${val('releasing_authority')}</span></div>
             <div class="section-row"><span class="field-label">ID Anklet Applied By:</span><span class="field-value">${val('id_anklet_applied_by')}</span></div>
-            <div style="margin-top:6px;font-size:9pt">${noEffects ? '☑' : '☐'} <strong>NO PERSONAL EFFECTS</strong></div>
+            <div style="margin-top:2px;font-size:7pt">${noEffects ? '☑' : '☐'} <strong>NO PERSONAL EFFECTS</strong></div>
           </div>
           <div class="right">
             <div class="section-title">Any Noticeable Injuries:</div>
@@ -4164,11 +4166,11 @@ const DocumentsPanel = ({ transports }) => {
             <div class="inj-row"><span class="field-label">Head Injury:</span> ${yn('injury_head')}</div>
             <div class="inj-row"><span class="field-label">Recent Scar:</span> ${yn('injury_scar')}</div>
             <div class="inj-row"><span class="field-label">Scrapes:</span> ${yn('injury_scrapes')}</div>
-            <div style="margin-top:6px">
-              <div class="field-label" style="margin-bottom:2px">NOTES:</div>
-              <div class="field-value" style="min-height:30px;min-width:unset;width:100%;display:block">${val('notes')}</div>
+            <div style="margin-top:2px">
+              <div class="field-label" style="margin-bottom:1px">NOTES:</div>
+              <div class="field-value" style="min-height:18px;min-width:unset;width:100%;display:block">${val('notes')}</div>
             </div>
-            <div style="margin-top:6px">
+            <div style="margin-top:2px">
               <div class="section-row"><span class="field-label">Invoice #:</span><span class="field-value">${val('invoice_number')}</span></div>
               <div class="section-row"><span class="field-label">TOTAL: $</span><span class="field-value">${val('total')}</span></div>
             </div>
@@ -4211,7 +4213,7 @@ const DocumentsPanel = ({ transports }) => {
             &nbsp;&nbsp;
             <span class="field-label">Funeral Home Time:</span><span class="field-value short" style="width:80px">${val('funeral_home_time')}</span>
           </div>
-          <div class="section-row" style="margin-top:4px">
+          <div class="section-row" style="margin-top:1px">
             <span class="field-label">Witness Signature: X</span>
             ${sigHtml}
           </div>

@@ -190,6 +190,9 @@ function migrateDb(db) {
   try { db.exec('ALTER TABLE users ADD COLUMN verification_token TEXT'); } catch (_) {}
   try { db.exec('ALTER TABLE users ADD COLUMN verification_sent_at TEXT'); } catch (_) {}
 
+  // Add phone to users if missing
+  try { db.exec('ALTER TABLE users ADD COLUMN phone TEXT'); } catch (_) {}
+
   // Add phone/notes to drivers if missing
   try { db.exec('ALTER TABLE drivers ADD COLUMN phone TEXT'); } catch (_) {}
   try { db.exec('ALTER TABLE drivers ADD COLUMN notes TEXT'); } catch (_) {}

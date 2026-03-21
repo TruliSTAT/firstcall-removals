@@ -120,7 +120,39 @@ router.post('/logout', authenticateToken, (req, res) => {
 
 // GET /api/auth/me
 router.get('/me', authenticateToken, (req, res) => {
-  res.json({ user: req.user });
+  const db = getDb();
+  const user = db.prepare('SELECT id, username, role, email, phone, funeral_home_name FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ user });
+});
+
+// PUT /api/auth/profile — update own email, phone, funeral_home_name
+router.put('/profile', authenticateToken, (req, res) => {
+  const { email, phone, funeral_home_name } = req.body;
+  const db = getDb();
+  db.prepare(`UPDATE users SET email = ?, phone = ?, funeral_home_name = ? WHERE id = ?`)
+    .run(email || null, phone || null, funeral_home_name || null, req.user.id);
+  const updated = db.prepare('SELECT id, username, role, email, phone, funeral_home_name FROM users WHERE id = ?').get(req.user.id);
+  res.json({ user: updated });
+});
+
+// PUT /api/auth/change-password — change own password (requires current_password)
+router.put('/change-password', authenticateToken, (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (!current_password || !new_password) {
+    return res.status(400).json({ error: 'current_password and new_password are required' });
+  }
+  if (new_password.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  }
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !bcrypt.compareSync(current_password, user.password_hash)) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+  const newHash = bcrypt.hashSync(new_password, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, req.user.id);
+  res.json({ success: true });
 });
 
 // ─── Helper: Verification Result HTML Page ────────────────────────────────────
