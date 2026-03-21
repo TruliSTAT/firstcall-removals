@@ -887,6 +887,7 @@ const FleetTab = ({ drivers, vehicles, onRefresh, adminUsersData, adminUsersLoad
                   <select value={vehicleForm.type} onChange={e => setVehicleForm(p => ({ ...p, type: e.target.value }))}
                     className="w-full p-2 border border-gray-300 rounded text-sm">
                     <option value="">Select type</option>
+                    <option value="Van">Van</option>
                     <option value="Sprinter Van">Sprinter Van</option>
                     <option value="Ford Transit">Ford Transit</option>
                     <option value="SUV">SUV</option>
