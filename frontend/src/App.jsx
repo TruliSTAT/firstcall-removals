@@ -4122,6 +4122,7 @@ function buildInvoiceHtmlClient(inv) {
   const cityLine = [customerCity, customerState, customerZip].filter(Boolean).join(' ');
 
   return `
+  <style>@page{size:letter portrait;margin:0.35in}@media print{html{zoom:0.82}}</style>
   <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
     <div style="border-top:4px solid #2d9b6e;padding:24px 32px 16px">
       <table width="100%"><tr>
@@ -5040,11 +5041,11 @@ const DocumentsPanel = ({ transports }) => {
 
       printDiv.innerHTML = `
         <style>
-          @page { size: letter portrait; margin: 0.3in; }
+          @page { size: letter portrait; margin: 0.25in; }
           * { box-sizing: border-box; }
           @media print { body > *:not(#fcr-print-doc) { display: none !important; } #fcr-print-doc { display: block !important; } }
           body { margin: 0; padding: 0; }
-          #fcr-print-doc { font-family: Arial, sans-serif; font-size: 7.5pt; line-height: 1.2; color: #111; max-width: 100%; padding: 0; transform: scale(0.97); transform-origin: top left; }
+          #fcr-print-doc { font-family: Arial, sans-serif; font-size: 7.5pt; line-height: 1.2; color: #111; max-width: 100%; padding: 0; zoom: 0.88; }
           .form-header { display: flex; justify-content: space-between; align-items: flex-start; border: 2px solid #333; padding: 3px 6px; }
           .form-header .logo-block { display: flex; align-items: flex-start; gap: 5px; }
           .form-header .logo-wings { font-size: 18pt; line-height: 1; color: #1a3a6b; }
@@ -5324,13 +5325,14 @@ const DocumentsPanel = ({ transports }) => {
 
     printDiv.innerHTML = `
       <style>
+        @page { size: letter portrait; margin: 0.35in; }
         @media print { body > *:not(#fcr-print-doc) { display: none !important; } #fcr-print-doc { display: block !important; } }
-        #fcr-print-doc { font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 40px; }
-        #fcr-print-doc h1 { font-size: 22px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 8px; }
-        #fcr-print-doc .field-row { margin-bottom: 14px; }
-        #fcr-print-doc .field-label { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #555; margin-bottom: 4px; }
-        #fcr-print-doc .field-value { font-size: 14px; border-bottom: 1px solid #ccc; padding: 4px 0; min-height: 24px; }
-        #fcr-print-doc .sig-img { border: 1px solid #999; border-radius: 4px; }
+        #fcr-print-doc { font-family: Arial, sans-serif; max-width: 100%; margin: 0; padding: 0; zoom: 0.82; }
+        #fcr-print-doc h1 { font-size: 16px; border-bottom: 2px solid #333; padding-bottom: 6px; margin-bottom: 6px; }
+        #fcr-print-doc .field-row { margin-bottom: 8px; page-break-inside: avoid; }
+        #fcr-print-doc .field-label { font-size: 8px; font-weight: bold; text-transform: uppercase; color: #555; margin-bottom: 2px; }
+        #fcr-print-doc .field-value { font-size: 11px; border-bottom: 1px solid #ccc; padding: 2px 0; min-height: 18px; }
+        #fcr-print-doc .sig-img { border: 1px solid #999; border-radius: 4px; max-height: 60px; }
       </style>
       <h1>${tpl.name}</h1>
       ${headerHtml}
