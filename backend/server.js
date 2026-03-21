@@ -33,6 +33,7 @@ try {
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/transports', require('./routes/attachments'));
 app.use('/api/transports', require('./routes/transports'));
 app.use('/api/drivers', require('./routes/drivers'));
 app.use('/api/vehicles', require('./routes/vehicles'));

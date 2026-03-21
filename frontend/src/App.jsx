@@ -3,7 +3,8 @@ import {
   MapPin, Plus, Truck, Clock, Phone, User, Calendar, Weight,
   CheckCircle, LogIn, Users, Settings, Navigation, Bell, AlertCircle,
   ChevronRight, Activity, Package, Flag, Loader, Wand2, X, ChevronDown, ChevronUp,
-  Building2, Upload, Edit2, Trash2, Wrench, Copy, FileText, History, Search
+  Building2, Upload, Edit2, Trash2, Wrench, Copy, FileText, History, Search,
+  Paperclip, Mail, Printer, Download
 } from 'lucide-react';
 
 // ─── API upload helper (for multipart/form-data) ─────────────────────────────
@@ -362,6 +363,20 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
           />
         );
       })()}
+
+      {/* Summary PDF */}
+      {(userRole === 'admin' || userRole === 'employee') && (
+        <div className="mt-2 pt-2 border-t border-gray-100">
+          <a
+            href={`/api/transports/${transport.id}/summary.pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600"
+          >
+            <FileText className="w-3 h-3" />📄 Summary PDF
+          </a>
+        </div>
+      )}
 
       {/* Per-transport chat */}
       <TransportChat transportId={transport.id} currentUser={currentUser} />
@@ -1854,6 +1869,23 @@ const FuneralTransportApp = () => {
       .catch(() => setToken(null));
   }, []);
 
+  // ── Pre-fill intake form with FH defaults on login ──────────────────────
+
+  useEffect(() => {
+    if (!isLoggedIn || userRole !== 'funeral_home') return;
+    apiRequest('GET', '/auth/defaults').then(data => {
+      if (!data.defaults) return;
+      const d = data.defaults;
+      setFormData(prev => ({
+        ...prev,
+        ...(d.default_destination && !prev.destination ? { destination: d.default_destination } : {}),
+        ...(d.default_contact_name && !prev.pickupContact ? { pickupContact: d.default_contact_name } : {}),
+        ...(d.default_contact_phone && !prev.pickupPhone ? { pickupPhone: d.default_contact_phone } : {}),
+      }));
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, userRole]);
+
   // ── Initial load + polling ───────────────────────────────────────────────
 
   useEffect(() => {
@@ -2693,8 +2725,11 @@ const FuneralTransportApp = () => {
                 <Clock className="w-4 h-4 inline mr-1" />My Transports
                 {alerts.length > 0 && <span className="ml-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{alerts.length}</span>}
               </TabBtn>
-              <TabBtn active={activeTab === 'history'} onClick={() => setActiveTab('history')}>
-                📋 History
+              <TabBtn active={activeTab === 'vault'} onClick={() => setActiveTab('vault')}>
+                🔒 Vault
+              </TabBtn>
+              <TabBtn active={activeTab === 'profile'} onClick={() => setActiveTab('profile')}>
+                👤 My Profile
               </TabBtn>
               <TabBtn active={activeTab === 'documents'} onClick={() => setActiveTab('documents')}>
                 📄 Documents
@@ -3386,55 +3421,14 @@ const FuneralTransportApp = () => {
           </div>
         )}
 
-        {/* ── History Tab (Funeral Home) ───────────────────────────────── */}
-        {activeTab === 'history' && userRole === 'funeral_home' && (
-          <div>
-            <h2 className="text-lg font-semibold mb-4">📋 Completed Transports</h2>
-            {(() => {
-              const completed = myTransports.filter(t => t.status === 'Completed').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-              if (!completed.length) return (
-                <div className="text-center py-12">
-                  <History className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500">No completed transports yet</p>
-                </div>
-              );
-              return (
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="text-left p-3 font-medium text-gray-600">Case #</th>
-                        <th className="text-left p-3 font-medium text-gray-600">Decedent</th>
-                        <th className="text-left p-3 font-medium text-gray-600 hidden sm:table-cell">Date</th>
-                        <th className="text-right p-3 font-medium text-gray-600">Cost</th>
-                        <th className="text-center p-3 font-medium text-gray-600">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {completed.map(t => (
-                        <tr key={t.id} className="hover:bg-gray-50">
-                          <td className="p-3">
-                            <div className="flex items-center gap-1">
-                              <span className="font-mono text-xs text-gray-600">{t.caseNumber || t.id}</span>
-                              {t.caseNumber && (
-                                <button onClick={() => handleCopyCase(t.caseNumber, t.id)} className="text-gray-300 hover:text-blue-500" title="Copy">
-                                  {copiedId === t.id ? <span className="text-green-600 text-xs">✓</span> : <Copy className="w-3 h-3" />}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-3 font-medium text-gray-900">{t.decedentName || '—'}</td>
-                          <td className="p-3 text-gray-500 hidden sm:table-cell">{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : '—'}</td>
-                          <td className="p-3 text-right font-semibold text-gray-800">${t.totalCost?.toFixed(2) || '—'}</td>
-                          <td className="p-3 text-center"><StatusBadge status={t.status} /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
-          </div>
+        {/* ── Vault Tab (Funeral Home) ─────────────────────────────────── */}
+        {activeTab === 'vault' && userRole === 'funeral_home' && (
+          <VaultTab transports={myTransports} currentUser={currentUser} />
+        )}
+
+        {/* ── My Profile Tab (Funeral Home) ───────────────────────────── */}
+        {activeTab === 'profile' && userRole === 'funeral_home' && (
+          <FHProfileTab currentUser={currentUser} onProfileUpdated={(u) => setCurrentUser(u)} />
         )}
 
         {/* ── Calendar Tab (Admin/Employee) ────────────────────────────── */}
@@ -5509,6 +5503,68 @@ const FormField = ({ label, children, confidence }) => (
 const TransportCard = ({ transport, onSaveNotes, onCopyCase, copiedId, currentUser }) => {
   const [notesInput, setNotesInput] = useState(transport.notes || '');
   const [editingNotes, setEditingNotes] = useState(false);
+  const [attachments, setAttachments] = useState(null); // null=not loaded, []= loaded
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [emailForms, setEmailForms] = useState({}); // aid -> { to, subject, message, open }
+  const fileInputRef = useRef(null);
+
+  const loadAttachments = async () => {
+    if (attachmentsLoading) return;
+    setAttachmentsLoading(true);
+    try {
+      const data = await apiRequest('GET', `/transports/${transport.id}/attachments`);
+      setAttachments(data.attachments || []);
+    } catch (_) {
+      setAttachments([]);
+    } finally {
+      setAttachmentsLoading(false);
+    }
+  };
+
+  useEffect(() => { loadAttachments(); }, [transport.id]);
+
+  const handleFileUpload = async (e) => {
+    const files = e.target.files;
+    if (!files || !files.length) return;
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        await apiUpload(`/transports/${transport.id}/attachments`, fd);
+      } catch (err) {
+        console.error('Upload error:', err.message);
+      }
+    }
+    e.target.value = '';
+    loadAttachments();
+  };
+
+  const handleDeleteAttachment = async (aid) => {
+    if (!confirm('Delete this attachment?')) return;
+    try {
+      await apiRequest('DELETE', `/transports/${transport.id}/attachments/${aid}`);
+      setAttachments(prev => prev.filter(a => a.id !== aid));
+    } catch (err) { alert(err.message); }
+  };
+
+  const handleEmailAttachment = async (aid) => {
+    const form = emailForms[aid] || {};
+    if (!form.to) return alert('Enter recipient email');
+    try {
+      await apiRequest('POST', `/transports/${transport.id}/attachments/${aid}/email`, {
+        to: form.to, subject: form.subject, message: form.message
+      });
+      alert('Email sent!');
+      setEmailForms(prev => ({ ...prev, [aid]: { ...prev[aid], open: false } }));
+    } catch (err) { alert(err.message); }
+  };
+
+  const fmtSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-md p-4">
@@ -5637,8 +5693,375 @@ const TransportCard = ({ transport, onSaveNotes, onCopyCase, copiedId, currentUs
         )}
       </div>
 
+      {/* Attachments Section */}
+      <div className="mt-3 pt-3 border-t">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs font-semibold text-gray-600 flex items-center gap-1">
+            <Paperclip className="w-3 h-3" /> Attachments {attachments ? `(${attachments.length})` : ''}
+          </span>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded"
+          >
+            <Upload className="w-3 h-3" /> Upload
+          </button>
+          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
+        </div>
+        {attachmentsLoading && <p className="text-xs text-gray-400">Loading...</p>}
+        {attachments && attachments.length === 0 && <p className="text-xs text-gray-400 italic">No attachments</p>}
+        {attachments && attachments.map(att => (
+          <div key={att.id} className="border border-gray-100 rounded p-2 mb-1 bg-gray-50">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1 min-w-0">
+                <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-800 truncate">{att.original_name}</span>
+                {att.file_size && <span className="text-xs text-gray-400 flex-shrink-0">({fmtSize(att.file_size)})</span>}
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <a
+                  href={`/api/transports/${transport.id}/attachments/${att.id}/download`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="p-1 text-gray-400 hover:text-blue-600" title="Download"
+                >
+                  <Download className="w-3 h-3" />
+                </a>
+                <button
+                  onClick={() => window.open(`/api/transports/${transport.id}/attachments/${att.id}/download`, '_blank')}
+                  className="p-1 text-gray-400 hover:text-blue-600" title="Print"
+                >
+                  <Printer className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setEmailForms(prev => ({ ...prev, [att.id]: { ...(prev[att.id] || {}), open: !prev[att.id]?.open } }))}
+                  className="p-1 text-gray-400 hover:text-blue-600" title="Email"
+                >
+                  <Mail className="w-3 h-3" />
+                </button>
+                {currentUser?.role === 'admin' && (
+                  <button onClick={() => handleDeleteAttachment(att.id)} className="p-1 text-gray-400 hover:text-red-600" title="Delete">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="text-xs text-gray-400 mt-0.5">
+              {att.uploaded_by} · {att.uploaded_at ? new Date(att.uploaded_at).toLocaleDateString() : ''}
+            </div>
+            {emailForms[att.id]?.open && (
+              <div className="mt-2 space-y-1">
+                <input
+                  type="email" placeholder="To email"
+                  className="w-full text-xs p-1.5 border border-gray-300 rounded"
+                  value={emailForms[att.id]?.to || ''}
+                  onChange={e => setEmailForms(prev => ({ ...prev, [att.id]: { ...prev[att.id], to: e.target.value } }))}
+                />
+                <input
+                  type="text" placeholder="Subject"
+                  className="w-full text-xs p-1.5 border border-gray-300 rounded"
+                  value={emailForms[att.id]?.subject || ''}
+                  onChange={e => setEmailForms(prev => ({ ...prev, [att.id]: { ...prev[att.id], subject: e.target.value } }))}
+                />
+                <textarea
+                  placeholder="Message (optional)"
+                  rows={2}
+                  className="w-full text-xs p-1.5 border border-gray-300 rounded"
+                  value={emailForms[att.id]?.message || ''}
+                  onChange={e => setEmailForms(prev => ({ ...prev, [att.id]: { ...prev[att.id], message: e.target.value } }))}
+                />
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => handleEmailAttachment(att.id)}
+                    className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                  >Send</button>
+                  <button
+                    onClick={() => setEmailForms(prev => ({ ...prev, [att.id]: { ...prev[att.id], open: false } }))}
+                    className="text-xs text-gray-500 px-2 py-1"
+                  >Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
       {/* Per-transport chat */}
       <TransportChat transportId={transport.id} currentUser={currentUser} />
+    </div>
+  );
+};
+
+// ─── Vault Tab (Funeral Home) ─────────────────────────────────────────────────
+
+const VaultTab = ({ transports, currentUser }) => {
+  const [search, setSearch] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  const [vaultAttachments, setVaultAttachments] = useState({});
+  const [emailForms, setEmailForms] = useState({});
+
+  const sorted = [...transports].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const filtered = sorted.filter(t => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (t.decedentName || '').toLowerCase().includes(q) || (t.caseNumber || '').toLowerCase().includes(q);
+  });
+
+  const toggleExpand = async (id) => {
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    if (!vaultAttachments[id]) {
+      try {
+        const data = await apiRequest('GET', `/transports/${id}/attachments`);
+        setVaultAttachments(prev => ({ ...prev, [id]: data.attachments || [] }));
+      } catch (_) {
+        setVaultAttachments(prev => ({ ...prev, [id]: [] }));
+      }
+    }
+  };
+
+  const handleEmailAtt = async (transportId, attId) => {
+    const form = emailForms[attId] || {};
+    if (!form.to) return alert('Enter recipient email');
+    try {
+      await apiRequest('POST', `/transports/${transportId}/attachments/${attId}/email`, {
+        to: form.to, subject: form.subject, message: form.message
+      });
+      alert('Email sent!');
+      setEmailForms(prev => ({ ...prev, [attId]: { ...prev[attId], open: false } }));
+    } catch (err) { alert(err.message); }
+  };
+
+  const fmtSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">🔒 Call Vault</h2>
+        <span className="text-sm text-gray-500">{filtered.length} call{filtered.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search by decedent name or case #..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
+        />
+      </div>
+      {filtered.length === 0 && (
+        <div className="text-center py-12 text-gray-400">
+          <History className="w-10 h-10 mx-auto mb-2" />
+          <p>No transports found</p>
+        </div>
+      )}
+      <div className="space-y-2">
+        {filtered.map(t => {
+          const isOpen = expandedId === t.id;
+          const atts = vaultAttachments[t.id] || [];
+          return (
+            <div key={t.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              <button
+                className="w-full text-left p-3 hover:bg-gray-50 transition-colors"
+                onClick={() => toggleExpand(t.id)}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <StatusBadge status={t.status} />
+                    <span className="font-medium text-gray-900 truncate">{t.decedentName || '—'}</span>
+                    <span className="text-xs text-gray-400 font-mono flex-shrink-0">#{t.caseNumber || t.id}</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-gray-500 flex-shrink-0">
+                    <span className="hidden sm:inline">{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : ''}</span>
+                    <span className="font-semibold text-gray-700">${parseFloat(t.totalCost || 0).toFixed(2)}</span>
+                    {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
+                </div>
+                <div className="text-xs text-gray-500 mt-1">
+                  {t.pickupLocation} → {t.destination}
+                </div>
+              </button>
+              {isOpen && (
+                <div className="border-t p-3 bg-gray-50 space-y-3">
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-gray-500">Decedent:</span> <span className="font-medium">{t.decedentName}</span></div>
+                    <div><span className="text-gray-500">Date:</span> <span>{t.date}</span></div>
+                    <div><span className="text-gray-500">Pickup:</span> <span>{t.pickupLocation}</span></div>
+                    <div><span className="text-gray-500">Type:</span> <span>{t.pickupLocationType}</span></div>
+                    <div><span className="text-gray-500">Destination:</span> <span>{t.destination}</span></div>
+                    <div><span className="text-gray-500">Weight:</span> <span>{t.weight} lbs</span></div>
+                    <div><span className="text-gray-500">Pickup Contact:</span> <span>{t.pickupContact || '—'}</span></div>
+                    <div><span className="text-gray-500">Pickup Phone:</span> <span>{t.pickupPhone || '—'}</span></div>
+                    <div><span className="text-gray-500">Driver:</span> <span>{t.assignedDriver || '—'}</span></div>
+                    <div><span className="text-gray-500">Miles:</span> <span>{t.actualMiles || t.estimatedMiles}</span></div>
+                  </div>
+                  {t.notes && <p className="text-xs text-gray-600 italic">Notes: {t.notes}</p>}
+
+                  {/* Summary PDF */}
+                  <a
+                    href={`/api/transports/${t.id}/summary.pdf`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs bg-gray-800 text-white px-3 py-1.5 rounded hover:bg-gray-700"
+                  >
+                    <FileText className="w-3 h-3" /> 📄 Summary PDF
+                  </a>
+
+                  {/* Attachments */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-600 mb-1 flex items-center gap-1">
+                      <Paperclip className="w-3 h-3" /> Attachments ({atts.length})
+                    </p>
+                    {atts.length === 0 && <p className="text-xs text-gray-400 italic">No attachments</p>}
+                    {atts.map(att => (
+                      <div key={att.id} className="border border-gray-200 rounded p-2 mb-1 bg-white">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-xs text-gray-800 truncate">{att.original_name} {att.file_size ? `(${fmtSize(att.file_size)})` : ''}</span>
+                          <div className="flex items-center gap-1">
+                            <a href={`/api/transports/${t.id}/attachments/${att.id}/download`} target="_blank" rel="noopener noreferrer" className="p-1 text-gray-400 hover:text-blue-600" title="Download"><Download className="w-3 h-3" /></a>
+                            <button onClick={() => window.open(`/api/transports/${t.id}/attachments/${att.id}/download`, '_blank')} className="p-1 text-gray-400 hover:text-blue-600" title="Print"><Printer className="w-3 h-3" /></button>
+                            <button
+                              onClick={() => setEmailForms(prev => ({ ...prev, [att.id]: { ...(prev[att.id] || {}), open: !prev[att.id]?.open } }))}
+                              className="p-1 text-gray-400 hover:text-blue-600" title="Email"
+                            ><Mail className="w-3 h-3" /></button>
+                          </div>
+                        </div>
+                        {emailForms[att.id]?.open && (
+                          <div className="mt-2 space-y-1">
+                            <input type="email" placeholder="To" className="w-full text-xs p-1 border border-gray-300 rounded"
+                              value={emailForms[att.id]?.to || ''} onChange={e => setEmailForms(prev => ({ ...prev, [att.id]: { ...prev[att.id], to: e.target.value } }))} />
+                            <input type="text" placeholder="Subject" className="w-full text-xs p-1 border border-gray-300 rounded"
+                              value={emailForms[att.id]?.subject || ''} onChange={e => setEmailForms(prev => ({ ...prev, [att.id]: { ...prev[att.id], subject: e.target.value } }))} />
+                            <textarea placeholder="Message" rows={2} className="w-full text-xs p-1 border border-gray-300 rounded"
+                              value={emailForms[att.id]?.message || ''} onChange={e => setEmailForms(prev => ({ ...prev, [att.id]: { ...prev[att.id], message: e.target.value } }))} />
+                            <div className="flex gap-1">
+                              <button onClick={() => handleEmailAtt(t.id, att.id)} className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700">Send</button>
+                              <button onClick={() => setEmailForms(prev => ({ ...prev, [att.id]: { ...prev[att.id], open: false } }))} className="text-xs text-gray-500 px-2 py-1">Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ─── FH Profile Tab ───────────────────────────────────────────────────────────
+
+const FHProfileTab = ({ currentUser, onProfileUpdated }) => {
+  const [profileForm, setProfileForm] = useState({ email: currentUser?.email || '', phone: currentUser?.phone || '' });
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMsg, setProfileMsg] = useState(null);
+  const [defaults, setDefaults] = useState({ default_destination: '', default_contact_name: '', default_contact_phone: '', default_destination_contact: '', default_destination_phone: '', notes: '' });
+  const [defaultsSaving, setDefaultsSaving] = useState(false);
+  const [defaultsMsg, setDefaultsMsg] = useState(null);
+
+  useEffect(() => {
+    apiRequest('GET', '/auth/defaults').then(data => {
+      if (data.defaults) {
+        setDefaults({
+          default_destination: data.defaults.default_destination || '',
+          default_contact_name: data.defaults.default_contact_name || '',
+          default_contact_phone: data.defaults.default_contact_phone || '',
+          default_destination_contact: data.defaults.default_destination_contact || '',
+          default_destination_phone: data.defaults.default_destination_phone || '',
+          notes: data.defaults.notes || '',
+        });
+      }
+    }).catch(() => {});
+  }, []);
+
+  const saveProfile = async () => {
+    setProfileSaving(true);
+    try {
+      const { user } = await apiRequest('PUT', '/auth/profile', profileForm);
+      onProfileUpdated?.(user);
+      setProfileMsg({ type: 'success', text: 'Profile saved!' });
+    } catch (err) {
+      setProfileMsg({ type: 'error', text: err.message });
+    } finally {
+      setProfileSaving(false);
+      setTimeout(() => setProfileMsg(null), 3000);
+    }
+  };
+
+  const saveDefaults = async () => {
+    setDefaultsSaving(true);
+    try {
+      await apiRequest('PUT', '/auth/defaults', defaults);
+      setDefaultsMsg({ type: 'success', text: 'Defaults saved!' });
+    } catch (err) {
+      setDefaultsMsg({ type: 'error', text: err.message });
+    } finally {
+      setDefaultsSaving(false);
+      setTimeout(() => setDefaultsMsg(null), 3000);
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-lg">
+      <h2 className="text-lg font-semibold">👤 My Profile</h2>
+
+      {/* Profile Card */}
+      <div className="bg-white rounded-lg shadow-sm border p-4 space-y-3">
+        <h3 className="font-medium text-gray-800">Account Info</h3>
+        <div className="text-sm text-gray-600">Username: <span className="font-medium text-gray-900">{currentUser?.username}</span></div>
+        <div className="text-sm text-gray-600">Funeral Home: <span className="font-medium text-gray-900">{currentUser?.funeral_home_name || '—'}</span></div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input type="email" className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            value={profileForm.email} onChange={e => setProfileForm(p => ({ ...p, email: e.target.value }))} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+          <input type="tel" className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            value={profileForm.phone} onChange={e => setProfileForm(p => ({ ...p, phone: e.target.value }))} />
+        </div>
+        {profileMsg && <p className={`text-sm ${profileMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{profileMsg.text}</p>}
+        <button onClick={saveProfile} disabled={profileSaving}
+          className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50">
+          {profileSaving ? 'Saving...' : 'Save Profile'}
+        </button>
+      </div>
+
+      {/* Defaults Card */}
+      <div className="bg-white rounded-lg shadow-sm border p-4 space-y-3">
+        <h3 className="font-medium text-gray-800">Request Defaults</h3>
+        <p className="text-xs text-gray-500">These will pre-fill new transport requests automatically.</p>
+        {[
+          ['default_destination', 'Default Destination'],
+          ['default_contact_name', 'Default Contact Name'],
+          ['default_contact_phone', 'Default Contact Phone'],
+          ['default_destination_contact', 'Destination Contact'],
+          ['default_destination_phone', 'Destination Phone'],
+        ].map(([key, label]) => (
+          <div key={key}>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+            <input type="text" className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              value={defaults[key]} onChange={e => setDefaults(p => ({ ...p, [key]: e.target.value }))} />
+          </div>
+        ))}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+          <textarea rows={2} className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            value={defaults.notes} onChange={e => setDefaults(p => ({ ...p, notes: e.target.value }))} />
+        </div>
+        {defaultsMsg && <p className={`text-sm ${defaultsMsg.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>{defaultsMsg.text}</p>}
+        <button onClick={saveDefaults} disabled={defaultsSaving}
+          className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50">
+          {defaultsSaving ? 'Saving...' : 'Save Defaults'}
+        </button>
+      </div>
     </div>
   );
 };

@@ -155,14 +155,84 @@ router.get('/me', authenticateToken, (req, res) => {
   res.json({ user });
 });
 
+// GET /api/auth/profile — return current user profile
+router.get('/profile', authenticateToken, (req, res) => {
+  const db = getDb();
+  const user = db.prepare('SELECT id, username, email, phone, funeral_home_name, funeral_home_id, role FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ user });
+});
+
 // PUT /api/auth/profile — update own email, phone, funeral_home_name
 router.put('/profile', authenticateToken, (req, res) => {
   const { email, phone, funeral_home_name } = req.body;
   const db = getDb();
   db.prepare(`UPDATE users SET email = ?, phone = ?, funeral_home_name = ? WHERE id = ?`)
     .run(email || null, phone || null, funeral_home_name || null, req.user.id);
-  const updated = db.prepare('SELECT id, username, role, email, phone, funeral_home_name FROM users WHERE id = ?').get(req.user.id);
+  const updated = db.prepare('SELECT id, username, role, email, phone, funeral_home_name, funeral_home_id FROM users WHERE id = ?').get(req.user.id);
   res.json({ user: updated });
+});
+
+// GET /api/auth/defaults — get funeral home defaults for current user
+router.get('/defaults', authenticateToken, (req, res) => {
+  const db = getDb();
+  const user = db.prepare('SELECT funeral_home_name FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !user.funeral_home_name) return res.json({ defaults: null });
+
+  const fh = db.prepare(`
+    SELECT id, name, phone, default_destination, default_contact_name, default_contact_phone,
+           default_destination_contact, default_destination_phone, notes
+    FROM funeral_homes
+    WHERE LOWER(name) LIKE LOWER(?) AND deleted_at IS NULL
+    LIMIT 1
+  `).get(`%${user.funeral_home_name}%`);
+
+  res.json({ defaults: fh || null });
+});
+
+// PUT /api/auth/defaults — update funeral home defaults for current user
+router.put('/defaults', authenticateToken, (req, res) => {
+  const {
+    default_destination, default_contact_name, default_contact_phone,
+    default_destination_contact, default_destination_phone, notes
+  } = req.body;
+
+  const db = getDb();
+  const user = db.prepare('SELECT funeral_home_name FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !user.funeral_home_name) return res.status(400).json({ error: 'No funeral home linked to this account' });
+
+  const fh = db.prepare(`
+    SELECT id FROM funeral_homes WHERE LOWER(name) LIKE LOWER(?) AND deleted_at IS NULL LIMIT 1
+  `).get(`%${user.funeral_home_name}%`);
+
+  if (!fh) return res.status(404).json({ error: 'Funeral home not found' });
+
+  db.prepare(`
+    UPDATE funeral_homes SET
+      default_destination = ?,
+      default_contact_name = ?,
+      default_contact_phone = ?,
+      default_destination_contact = ?,
+      default_destination_phone = ?,
+      notes = ?
+    WHERE id = ?
+  `).run(
+    default_destination || null,
+    default_contact_name || null,
+    default_contact_phone || null,
+    default_destination_contact || null,
+    default_destination_phone || null,
+    notes || null,
+    fh.id
+  );
+
+  const updated = db.prepare(`
+    SELECT id, name, phone, default_destination, default_contact_name, default_contact_phone,
+           default_destination_contact, default_destination_phone, notes
+    FROM funeral_homes WHERE id = ?
+  `).get(fh.id);
+
+  res.json({ defaults: updated });
 });
 
 // PUT /api/auth/change-password — change own password (requires current_password)

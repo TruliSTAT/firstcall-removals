@@ -4,6 +4,7 @@ const path = require('path');
 const { getDb, rowToTransport } = require('../database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { alertNewTransport } = require('../lib/sendSMS');
+const PDFDocument = require('pdfkit');
 
 function fuzzyMatchFuneralHome(query, homes) {
   if (!query || !homes.length) return null;
@@ -707,6 +708,148 @@ router.delete('/:id/documents/:docId', authenticateToken, requireRole('admin'), 
   if (!doc) return res.status(404).json({ error: 'Document not found' });
   db.prepare('DELETE FROM transport_documents WHERE id = ?').run(docId);
   res.json({ message: 'Document deleted' });
+});
+
+// GET /api/transports/:id/summary.pdf — generate transport summary PDF
+router.get('/:id/summary.pdf', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const db = getDb();
+
+  // Look up transport with driver/vehicle names
+  const row = db.prepare(`
+    SELECT t.*,
+           d.name AS driver_name,
+           v.name AS vehicle_name
+    FROM transports t
+    LEFT JOIN drivers d ON d.id = t.assigned_driver_id
+    LEFT JOIN vehicles v ON v.id = t.assigned_vehicle_id
+    WHERE t.id = ?
+  `).get(id);
+
+  if (!row) return res.status(404).json({ error: 'Transport not found' });
+
+  // FH users can only access their own transports
+  if (req.user.role === 'funeral_home' && row.created_by_user_id !== req.user.id) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const t = rowToTransport(row);
+  const caseNum = t.caseNumber || t.id;
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="FCR-${caseNum}-summary.pdf"`);
+
+  const doc = new PDFDocument({ margin: 50, size: 'LETTER' });
+  doc.pipe(res);
+
+  const W = 515; // usable width
+  const DARK_GRAY = '#333333';
+  const LIGHT_GRAY = '#999999';
+  const BLACK = '#000000';
+
+  const val = (v) => v || null; // returns null if falsy
+
+  function writeField(label, value, x, y, fieldWidth) {
+    doc.fontSize(8).fillColor(LIGHT_GRAY).text(label, x, y);
+    doc.fontSize(10).fillColor(value ? BLACK : LIGHT_GRAY).text(value || '—', x, y + 12, { width: fieldWidth });
+  }
+
+  function sectionHeader(title, y) {
+    doc.fontSize(9).fillColor(DARK_GRAY).font('Helvetica-Bold').text(title.toUpperCase(), 50, y);
+    doc.moveTo(50, y + 14).lineTo(50 + W, y + 14).lineWidth(0.5).strokeColor('#cccccc').stroke();
+    doc.font('Helvetica');
+    return y + 22;
+  }
+
+  // ── Header ──────────────────────────────────────────────────────────────
+  doc.fontSize(22).fillColor('#1a1a1a').font('Helvetica-Bold').text('FIRST CALL REMOVALS', 50, 50);
+  doc.fontSize(11).fillColor(LIGHT_GRAY).font('Helvetica').text('Professional Funeral Transport Services', 50, 76);
+
+  doc.moveTo(50, 100).lineTo(50 + W, 100).lineWidth(1).strokeColor('#333333').stroke();
+
+  // ── Case Info ────────────────────────────────────────────────────────────
+  doc.fontSize(10).fillColor(DARK_GRAY).font('Helvetica-Bold').text('TRANSPORT SUMMARY', 50, 110);
+  doc.font('Helvetica').fontSize(10).fillColor(BLACK);
+  const dateStr = t.date ? new Date(t.date).toLocaleDateString() : '—';
+  doc.text(`Case #: ${caseNum}   |   Date: ${dateStr}   |   Status: ${t.status}`, 50, 125);
+
+  doc.moveTo(50, 145).lineTo(50 + W, 145).lineWidth(0.5).strokeColor('#eeeeee').stroke();
+
+  let y = 160;
+
+  // ── Decedent ─────────────────────────────────────────────────────────────
+  y = sectionHeader('Decedent', y);
+  writeField('Full Name', t.decedentName, 50, y, 200);
+  writeField('Date of Birth', t.dateOfBirth ? new Date(t.dateOfBirth + 'T00:00:00').toLocaleDateString() : null, 270, y, 130);
+  writeField('Weight', t.weight ? `${t.weight} lbs` : null, 420, y, 100);
+  y += 40;
+  writeField('Date of Death', t.dateOfDeath ? new Date(t.dateOfDeath + 'T00:00:00').toLocaleDateString() : null, 50, y, 200);
+  y += 40;
+
+  // ── Transport ────────────────────────────────────────────────────────────
+  y = sectionHeader('Transport', y);
+  writeField('Pickup Address', t.pickupLocation, 50, y, 200);
+  writeField('Pickup Type', t.pickupLocationType, 270, y, 130);
+  writeField('Pickup Contact', t.pickupContact, 50, y + 40, 200);
+  writeField('Pickup Phone', t.pickupPhone, 270, y + 40, 130);
+  y += 80;
+  writeField('Destination', t.destination, 50, y, 200);
+  writeField('Dest. Type', t.destinationLocationType, 270, y, 130);
+  writeField('Dest. Contact', t.destinationContact, 50, y + 40, 200);
+  writeField('Dest. Phone', t.destinationPhone, 270, y + 40, 130);
+  y += 80;
+
+  // ── Funeral Home ──────────────────────────────────────────────────────────
+  y = sectionHeader('Funeral Home', y);
+  writeField('Name', t.funeralHomeName, 50, y, 250);
+  writeField('Phone', t.funeralHomePhone, 320, y, 150);
+  y += 40;
+
+  // ── Operations ───────────────────────────────────────────────────────────
+  y = sectionHeader('Operations', y);
+  writeField('Driver', row.driver_name, 50, y, 130);
+  writeField('Vehicle', row.vehicle_name, 200, y, 130);
+  writeField('Est. Miles', t.estimatedMiles ? `${t.estimatedMiles} mi` : null, 350, y, 100);
+  writeField('Actual Miles', t.actualMiles ? `${t.actualMiles} mi` : null, 460, y, 100);
+  y += 40;
+  writeField('Scheduled', t.scheduledPickupAt ? new Date(t.scheduledPickupAt).toLocaleString() : null, 50, y, 200);
+  writeField('Completed', t.completedAt ? new Date(t.completedAt).toLocaleString() : null, 270, y, 200);
+  y += 40;
+
+  // ── Timeline ─────────────────────────────────────────────────────────────
+  y = sectionHeader('Timeline', y);
+  const steps = [
+    { label: 'Accepted', ts: t.acceptedAt },
+    { label: 'En Route', ts: t.enRouteAt },
+    { label: 'Arrived', ts: t.arrivedAt },
+    { label: 'Loaded', ts: t.loadedAt },
+    { label: 'Completed', ts: t.completedAt },
+  ];
+  const stepW = W / 5;
+  steps.forEach((step, i) => {
+    const sx = 50 + i * stepW;
+    doc.fontSize(8).fillColor(DARK_GRAY).font('Helvetica-Bold').text(step.label, sx, y, { width: stepW });
+    const tsStr = step.ts ? new Date(step.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+    doc.fontSize(8).fillColor(step.ts ? BLACK : LIGHT_GRAY).font('Helvetica').text(tsStr, sx, y + 12, { width: stepW });
+  });
+  y += 40;
+
+  // ── Notes ─────────────────────────────────────────────────────────────────
+  if (t.notes) {
+    y = sectionHeader('Notes', y);
+    doc.fontSize(10).fillColor(BLACK).font('Helvetica').text(t.notes, 50, y, { width: W });
+    y += doc.heightOfString(t.notes, { width: W }) + 20;
+  }
+
+  // ── Footer ────────────────────────────────────────────────────────────────
+  const footerY = doc.page.height - 60;
+  doc.moveTo(50, footerY).lineTo(50 + W, footerY).lineWidth(0.5).strokeColor('#cccccc').stroke();
+  doc.fontSize(8).fillColor(LIGHT_GRAY).text(
+    `Generated by FirstCallRemovals.com · ${new Date().toLocaleString()}`,
+    50, footerY + 10, { align: 'center', width: W }
+  );
+
+  doc.end();
 });
 
 module.exports = router;

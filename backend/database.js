@@ -310,6 +310,32 @@ function migrateDb(db) {
     );
   `);
 
+  // Transport attachments table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS transport_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transport_id TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      stored_path TEXT NOT NULL,
+      mime_type TEXT,
+      file_size INTEGER,
+      uploaded_by TEXT,
+      uploaded_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Add summary_pdf_path to transports if missing
+  try { db.exec('ALTER TABLE transports ADD COLUMN summary_pdf_path TEXT'); } catch(_) {}
+
+  // Add funeral_home_id to users if missing
+  try { db.exec('ALTER TABLE users ADD COLUMN funeral_home_id INTEGER'); } catch(_) {}
+
+  // Add defaults columns to funeral_homes if missing
+  try { db.exec('ALTER TABLE funeral_homes ADD COLUMN default_contact_name TEXT'); } catch(_) {}
+  try { db.exec('ALTER TABLE funeral_homes ADD COLUMN default_contact_phone TEXT'); } catch(_) {}
+  try { db.exec('ALTER TABLE funeral_homes ADD COLUMN default_destination_contact TEXT'); } catch(_) {}
+  try { db.exec('ALTER TABLE funeral_homes ADD COLUMN default_destination_phone TEXT'); } catch(_) {}
+
   // Invoice table: add new columns if missing
   const invoiceNewCols = [
     ['invoice_number', 'TEXT'],
