@@ -352,11 +352,11 @@ router.get('/admin/users-by-funeral-home', authenticateToken, requireRole('admin
   const db = getDb();
   const users = db.prepare(`
     SELECT u.id, u.username, u.email, u.role, u.funeral_home_name,
-           u.email_verified, u.created_at,
+           u.email_verified,
            fh.id as fh_id, fh.name as fh_name, fh.city as fh_city, fh.state as fh_state
     FROM users u
     LEFT JOIN funeral_homes fh ON fh.name = u.funeral_home_name AND fh.deleted_at IS NULL
-    ORDER BY u.role, u.funeral_home_name, u.created_at
+    ORDER BY u.role, u.funeral_home_name, u.username
   `).all();
 
   // Mask email: j***@domain.com
