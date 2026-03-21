@@ -1089,8 +1089,11 @@ const FuneralTransportApp = () => {
   const [invoicesFilter, setInvoicesFilter] = useState('all');
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [showCreateInvoice, setShowCreateInvoice] = useState(false);
-  const [invoiceForm, setInvoiceForm] = useState({ transportId: '', funeralHomeName: '', funeralHomeEmail: '', decedentName: '', pickupFee: '', mileageFee: '', obFee: '', adminFee: '10', totalCost: '', actualMiles: '', notes: '' });
+  const [invoiceForm, setInvoiceForm] = useState({ transportId: '', funeralHomeName: '', funeralHomeEmail: '', decedentName: '', pickupFee: '', mileageFee: '', obFee: '', adminFee: '10', totalCost: '', actualMiles: '', notes: '', dueDate: '', paymentStatus: 'due' });
   const [invoiceError, setInvoiceError] = useState('');
+  const [invoicePreview, setInvoicePreview] = useState(null);
+  const [invoicePreviewLoading, setInvoicePreviewLoading] = useState(false);
+  const [viewingInvoice, setViewingInvoice] = useState(null);
 
   // Funeral homes
   const [funeralHomes, setFuneralHomes] = useState([]);
@@ -1184,22 +1187,32 @@ const FuneralTransportApp = () => {
     return () => clearInterval(interval);
   }, [isLoggedIn, fetchData, fetchNotifications]);
 
-  // Pre-fill invoice form when transport selected
+  // Pre-fill invoice form when transport selected via /preview endpoint
   useEffect(() => {
-    if (!invoiceForm.transportId) return;
-    const t = transports.find(t => t.id === invoiceForm.transportId);
-    if (!t) return;
-    setInvoiceForm(prev => ({
-      ...prev,
-      funeralHomeName: t.funeralHomeName || prev.funeralHomeName,
-      decedentName: t.decedentName || prev.decedentName,
-      pickupFee: String(t.costBreakdown?.pickupFee ?? prev.pickupFee),
-      mileageFee: String(t.costBreakdown?.mileageFee ?? prev.mileageFee),
-      obFee: String(t.costBreakdown?.obFee ?? prev.obFee),
-      adminFee: String(t.costBreakdown?.adminFee ?? prev.adminFee),
-      totalCost: String(t.totalCost ?? prev.totalCost),
-      actualMiles: String(t.actualMiles || prev.actualMiles),
-    }));
+    if (!invoiceForm.transportId) {
+      setInvoicePreview(null);
+      return;
+    }
+    setInvoicePreviewLoading(true);
+    apiRequest('GET', `/invoices/preview/${invoiceForm.transportId}`)
+      .then(({ preview }) => {
+        setInvoicePreview(preview);
+        setInvoiceForm(prev => ({
+          ...prev,
+          funeralHomeName: preview.funeralHomeName || prev.funeralHomeName,
+          funeralHomeEmail: preview.funeralHomeEmail || prev.funeralHomeEmail,
+          decedentName: preview.decedentName || prev.decedentName,
+          pickupFee: String(preview.pickupFee ?? prev.pickupFee),
+          mileageFee: String(preview.mileageFee ?? prev.mileageFee),
+          obFee: String(preview.obFee ?? prev.obFee),
+          adminFee: '10',
+          totalCost: String(preview.total ?? prev.totalCost),
+          actualMiles: String(preview.actualMiles || prev.actualMiles),
+          dueDate: preview.dueDateIso || prev.dueDate,
+        }));
+      })
+      .catch(() => {})
+      .finally(() => setInvoicePreviewLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoiceForm.transportId]);
 
@@ -1390,17 +1403,23 @@ const FuneralTransportApp = () => {
     if (!invoiceForm.transportId) { setInvoiceError('Select a transport'); return; }
     try {
       const { invoice } = await apiRequest('POST', '/invoices', {
-        ...invoiceForm,
-        pickupFee: parseFloat(invoiceForm.pickupFee) || 0,
-        mileageFee: parseFloat(invoiceForm.mileageFee) || 0,
-        obFee: parseFloat(invoiceForm.obFee) || 0,
-        adminFee: parseFloat(invoiceForm.adminFee) || 10,
-        totalCost: parseFloat(invoiceForm.totalCost) || 0,
-        actualMiles: parseInt(invoiceForm.actualMiles) || 0,
+        transportId: invoiceForm.transportId,
+        overrides: {
+          pickupFee: parseFloat(invoiceForm.pickupFee) || 0,
+          mileageFee: parseFloat(invoiceForm.mileageFee) || 0,
+          obFee: parseFloat(invoiceForm.obFee) || 0,
+          adminFee: parseFloat(invoiceForm.adminFee) || 10,
+          actualMiles: parseInt(invoiceForm.actualMiles) || 0,
+          notes: invoiceForm.notes || null,
+          dueDate: invoiceForm.dueDate || null,
+          paymentStatus: invoiceForm.paymentStatus || 'due',
+          funeralHomeEmail: invoiceForm.funeralHomeEmail || null,
+        },
       });
       setInvoices(prev => [invoice, ...prev]);
       setShowCreateInvoice(false);
-      setInvoiceForm({ transportId: '', funeralHomeName: '', funeralHomeEmail: '', decedentName: '', pickupFee: '', mileageFee: '', obFee: '', adminFee: '10', totalCost: '', actualMiles: '', notes: '' });
+      setInvoicePreview(null);
+      setInvoiceForm({ transportId: '', funeralHomeName: '', funeralHomeEmail: '', decedentName: '', pickupFee: '', mileageFee: '', obFee: '', adminFee: '10', totalCost: '', actualMiles: '', notes: '', dueDate: '', paymentStatus: 'due' });
     } catch (err) {
       setInvoiceError(err.message);
     }
@@ -2626,6 +2645,10 @@ const FuneralTransportApp = () => {
             invoiceForm={invoiceForm}
             setInvoiceForm={setInvoiceForm}
             invoiceError={invoiceError}
+            invoicePreview={invoicePreview}
+            invoicePreviewLoading={invoicePreviewLoading}
+            viewingInvoice={viewingInvoice}
+            setViewingInvoice={setViewingInvoice}
             onFetch={fetchInvoices}
             setInvoicesFilter={setInvoicesFilter}
             onCreate={handleCreateInvoice}
@@ -2965,7 +2988,108 @@ const InvoiceDocCount = ({ transportId }) => {
   return <p className="text-xs text-blue-600 mt-1">📎 {count} document{count !== 1 ? 's' : ''} attached</p>;
 };
 
-const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, showCreateInvoice, setShowCreateInvoice, invoiceForm, setInvoiceForm, invoiceError, onFetch, setInvoicesFilter, onCreate, onApprove, onSend }) => {
+// ── Invoice HTML preview builder (mirrors backend) ───────────────────────────
+function buildInvoiceHtmlClient(inv) {
+  const lineItems = inv.lineItems || [];
+  const dobLine = inv.decedentDob ? `, DOB: ${inv.decedentDob}` : '';
+  const total = parseFloat(inv.totalCost || inv.total || 0).toFixed(2);
+  const subtotal = total;
+  const invoiceNumber = inv.invoiceNumber || inv.invoice_number || '(pending)';
+  const issueDate = inv.issueDate || inv.issue_date || '';
+  const serviceDate = inv.serviceDate || inv.service_date || '';
+  const dueDate = inv.dueDate || inv.due_date || '';
+  const paymentLabel = (inv.paymentStatus || inv.payment_status) === 'paid' ? 'Total Paid' : 'Total Due';
+  const customerNameFull = inv.customerNameFull || inv.customer_name_full || inv.funeralHomeName || '';
+  const customerStreet = inv.customerStreet || inv.customer_street || '';
+  const customerCity = inv.customerCity || inv.customer_city || '';
+  const customerState = inv.customerState || inv.customer_state || '';
+  const customerZip = inv.customerZip || inv.customer_zip || '';
+  const customerPhone = inv.customerPhone || inv.funeral_home_phone || '';
+  const customerEmail = inv.customerEmail || inv.funeralHomeEmail || inv.funeral_home_email || '';
+  const caseNumber = inv.caseNumber || inv.case_number || '—';
+  const decedentName = inv.decedentName || inv.decedent_name || '—';
+  const pickupLocation = inv.pickupLocation || inv.pickup_location || '—';
+  const deliveryLocation = inv.deliveryLocation || inv.delivery_location || '—';
+  const billToLocation = inv.billToLocation || inv.bill_to_location || '—';
+
+  const lineItemRows = lineItems.map(item => `
+    <tr style="border-bottom:1px dashed #e5e7eb">
+      <td style="padding:12px 32px">
+        <div style="font-size:13px;font-weight:500">${item.description}</div>
+        ${item.sub_line_1 ? `<div style="font-size:12px;color:#888;font-style:italic">${item.sub_line_1}</div>` : ''}
+        ${item.sub_line_2 ? `<div style="font-size:12px;color:#888;font-style:italic">${item.sub_line_2}</div>` : ''}
+      </td>
+      <td style="text-align:center;padding:12px;font-size:13px">${item.qty}</td>
+      <td style="text-align:right;padding:12px;font-size:13px">$${parseFloat(item.unit_price).toFixed(2)}</td>
+      <td style="text-align:right;padding:12px 32px;font-size:13px">$${parseFloat(item.amount).toFixed(2)}</td>
+    </tr>
+  `).join('');
+
+  const cityLine = [customerCity, customerState, customerZip].filter(Boolean).join(' ');
+
+  return `
+  <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
+    <div style="border-top:4px solid #2d9b6e;padding:24px 32px 16px">
+      <table width="100%"><tr>
+        <td>
+          <div style="font-size:22px;font-weight:700;color:#1a1a2e">🚐 STAT MCS LLC</div>
+          <div style="color:#555;font-size:13px;margin-top:4px">8618 Oceanmist Cove Drive<br>Cypress, TX 77433-7573</div>
+          <div style="color:#555;font-size:13px">statmcs.com@gmail.com · (281) 940-6525</div>
+        </td>
+        <td align="right">
+          <div style="font-size:13px;color:#555">Invoice #<strong>${invoiceNumber}</strong></div>
+          <div style="font-size:13px;color:#555">Issue date: ${issueDate}</div>
+        </td>
+      </tr></table>
+    </div>
+    <div style="padding:16px 32px;background:#f9fafb;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">
+      <div style="font-size:22px;font-weight:700;color:#1a1a2e">Case# ${caseNumber}, ${decedentName}${dobLine}</div>
+      <div style="color:#555;font-size:13px;margin-top:6px">Pickup Location: ${pickupLocation}</div>
+      <div style="color:#555;font-size:13px">Delivery Location: ${deliveryLocation}</div>
+      <div style="color:#555;font-size:13px">Bill to Location: ${billToLocation}</div>
+    </div>
+    <table width="100%" style="border-bottom:1px solid #e5e7eb"><tr>
+      <td width="40%" style="vertical-align:top;padding:16px 32px">
+        <div style="font-weight:700;margin-bottom:6px">Customer</div>
+        <div style="font-size:13px;color:#444;line-height:1.6">
+          ${customerNameFull}${customerEmail ? `<br>${customerEmail}` : ''}${customerPhone ? `<br>${customerPhone}` : ''}${customerStreet ? `<br>${customerStreet}` : ''}${cityLine ? `<br>${cityLine}` : ''}
+        </div>
+      </td>
+      <td width="30%" style="vertical-align:top;padding:16px">
+        <div style="font-weight:700;margin-bottom:6px">Invoice Details</div>
+        <div style="font-size:13px;color:#444;line-height:1.6">PDF created ${issueDate}<br><strong>$${total}</strong><br>Service date ${serviceDate}</div>
+      </td>
+      <td width="30%" style="vertical-align:top;padding:16px">
+        <div style="font-weight:700;margin-bottom:6px">Payment</div>
+        <div style="font-size:13px;color:#444;line-height:1.6">Due ${dueDate}<br><strong>$${total}</strong></div>
+      </td>
+    </tr></table>
+    <table width="100%" style="border-collapse:collapse">
+      <tr style="border-bottom:2px solid #e5e7eb">
+        <th style="text-align:left;padding:12px 32px;font-size:13px">Items</th>
+        <th style="text-align:center;padding:12px;font-size:13px">Quantity</th>
+        <th style="text-align:right;padding:12px;font-size:13px">Price</th>
+        <th style="text-align:right;padding:12px 32px;font-size:13px">Amount</th>
+      </tr>
+      ${lineItemRows}
+      <tr style="border-top:1px dashed #d1d5db">
+        <td colspan="3" style="text-align:right;padding:8px 8px;font-size:13px;color:#555">Subtotal</td>
+        <td style="text-align:right;padding:8px 32px;font-size:13px">$${subtotal}</td>
+      </tr>
+    </table>
+    <table width="100%">
+      <tr>
+        <td style="font-size:22px;font-weight:700;color:#1a1a2e;padding:16px 32px">${paymentLabel}</td>
+        <td style="text-align:right;font-size:22px;font-weight:700;color:#1a1a2e;padding:16px 32px">$${total}</td>
+      </tr>
+    </table>
+    <div style="padding:16px 32px;border-top:1px solid #e5e7eb;color:#888;font-size:12px">
+      First Call Removals · firstcallremovals.com · (281) 940-6525
+    </div>
+  </div>`;
+}
+
+const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, showCreateInvoice, setShowCreateInvoice, invoiceForm, setInvoiceForm, invoiceError, invoicePreview, invoicePreviewLoading, viewingInvoice, setViewingInvoice, onFetch, setInvoicesFilter, onCreate, onApprove, onSend }) => {
   useEffect(() => { onFetch(invoicesFilter); }, [invoicesFilter]);
 
   const completedTransports = transports.filter(t => t.status === 'Completed');
@@ -2987,6 +3111,19 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
   };
 
   const filtered = invoices.filter(inv => invoicesFilter === 'all' || inv.status === invoicesFilter);
+
+    // Build a live preview data object from the current form + preview data
+  const livePreviewData = invoicePreview ? {
+    ...invoicePreview,
+    funeralHomeEmail: invoiceForm.funeralHomeEmail || invoicePreview.funeralHomeEmail,
+    pickupFee: parseFloat(invoiceForm.pickupFee) || invoicePreview.pickupFee,
+    mileageFee: parseFloat(invoiceForm.mileageFee) || invoicePreview.mileageFee,
+    obFee: parseFloat(invoiceForm.obFee) || invoicePreview.obFee,
+    actualMiles: parseInt(invoiceForm.actualMiles) || invoicePreview.actualMiles,
+    totalCost: parseFloat(invoiceForm.totalCost) || invoicePreview.totalCost,
+    dueDate: invoiceForm.dueDate ? new Date(invoiceForm.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : invoicePreview.dueDate,
+    paymentStatus: invoiceForm.paymentStatus || 'due',
+  } : null;
 
   return (
     <div className="space-y-4">
@@ -3012,22 +3149,23 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
 
       {/* Create Invoice Modal */}
       {showCreateInvoice && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-2 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl my-4">
+            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10 rounded-t-xl">
               <h3 className="font-semibold text-gray-900">Create Invoice</h3>
               <button onClick={() => setShowCreateInvoice(false)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
             </div>
-            <div className="p-4 space-y-3">
+            <div className="p-4 space-y-4">
               {invoiceError && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{invoiceError}</div>}
 
+              {/* Transport selector */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Transport *</label>
                 <select value={invoiceForm.transportId} onChange={e => updateField('transportId', e.target.value)}
                   className="w-full p-2 border border-gray-300 rounded text-sm">
-                  <option value="">— Select completed transport —</option>
+                  <option value="">— Select a transport —</option>
                   {completedTransports.map(t => (
-                    <option key={t.id} value={t.id}>{t.decedentName || t.id} — {t.funeralHomeName || '?'} ({t.id})</option>
+                    <option key={t.id} value={t.id}>{t.decedentName || t.id} — {t.funeralHomeName || '?'} ({new Date(t.completedAt || t.date).toLocaleDateString()})</option>
                   ))}
                   {completedTransports.length === 0 && allTransports.map(t => (
                     <option key={t.id} value={t.id}>{t.decedentName || t.id} [{t.status}]</option>
@@ -3035,67 +3173,123 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Funeral Home Name</label>
-                  <input value={invoiceForm.funeralHomeName} onChange={e => updateField('funeralHomeName', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Funeral home" />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Send Invoice To (email)</label>
-                  <input type="email" value={invoiceForm.funeralHomeEmail} onChange={e => updateField('funeralHomeEmail', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="billing@funeralhome.com" />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Decedent Name</label>
-                  <input value={invoiceForm.decedentName} onChange={e => updateField('decedentName', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Full name" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Pickup Fee $</label>
-                  <input type="number" value={invoiceForm.pickupFee} onChange={e => updateField('pickupFee', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="195" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Mileage Fee $</label>
-                  <input type="number" value={invoiceForm.mileageFee} onChange={e => updateField('mileageFee', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="0" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">OB Fee $</label>
-                  <input type="number" value={invoiceForm.obFee} onChange={e => updateField('obFee', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="0" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Admin Fee $</label>
-                  <input type="number" value={invoiceForm.adminFee} onChange={e => updateField('adminFee', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="10" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Actual Miles</label>
-                  <input type="number" value={invoiceForm.actualMiles} onChange={e => updateField('actualMiles', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="0" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Total $ (auto)</label>
-                  <input type="number" value={invoiceForm.totalCost} onChange={e => updateField('totalCost', e.target.value)}
-                    className="w-full p-2 border border-blue-200 bg-blue-50 rounded text-sm font-bold" />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
-                  <textarea value={invoiceForm.notes} onChange={e => updateField('notes', e.target.value)}
-                    className="w-full p-2 border border-gray-300 rounded text-sm" rows={2} placeholder="Optional notes" />
-                </div>
-              </div>
+              {invoicePreviewLoading && (
+                <div className="text-center py-4 text-gray-400"><Loader className="w-5 h-5 animate-spin inline mr-2" />Loading transport data...</div>
+              )}
 
-              <div className="flex gap-2 pt-2">
+              {invoiceForm.transportId && !invoicePreviewLoading && (
+                <>
+                  {/* Editable fields */}
+                  <div className="grid grid-cols-2 gap-3 bg-gray-50 rounded-lg p-3">
+                    <div className="col-span-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Adjust Fees</div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Pickup Fee $</label>
+                      <input type="number" value={invoiceForm.pickupFee} onChange={e => updateField('pickupFee', e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Mileage Fee $</label>
+                      <input type="number" value={invoiceForm.mileageFee} onChange={e => updateField('mileageFee', e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">OB Fee $</label>
+                      <input type="number" value={invoiceForm.obFee} onChange={e => updateField('obFee', e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Actual Miles</label>
+                      <input type="number" value={invoiceForm.actualMiles} onChange={e => updateField('actualMiles', e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Due Date</label>
+                      <input type="date" value={invoiceForm.dueDate} onChange={e => updateField('dueDate', e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Payment Status</label>
+                      <select value={invoiceForm.paymentStatus} onChange={e => updateField('paymentStatus', e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded text-sm">
+                        <option value="due">Due</option>
+                        <option value="paid">Paid</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Send Invoice To (email)</label>
+                      <input type="email" value={invoiceForm.funeralHomeEmail} onChange={e => updateField('funeralHomeEmail', e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="billing@funeralhome.com" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                      <textarea value={invoiceForm.notes} onChange={e => updateField('notes', e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded text-sm" rows={2} placeholder="Optional notes" />
+                    </div>
+                    <div className="col-span-2">
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Total</div>
+                      <div className="text-xl font-bold text-green-700">${invoiceForm.totalCost || '0.00'}</div>
+                    </div>
+                  </div>
+
+                  {/* Live invoice preview */}
+                  {livePreviewData && (
+                    <div>
+                      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Invoice Preview</div>
+                      <div className="border border-gray-200 rounded-lg overflow-hidden">
+                        <div
+                          dangerouslySetInnerHTML={{ __html: buildInvoiceHtmlClient(livePreviewData) }}
+                          style={{ transform: 'scale(0.75)', transformOrigin: 'top left', width: '133%' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              <div className="flex gap-2 pt-2 sticky bottom-0 bg-white pb-2">
                 <button onClick={() => setShowCreateInvoice(false)}
                   className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50">
                   Cancel
                 </button>
-                <button onClick={onCreate}
-                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+                <button onClick={onCreate} disabled={!invoiceForm.transportId}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-40">
                   Save Draft
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice view modal */}
+      {viewingInvoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-2 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl my-4">
+            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10 rounded-t-xl">
+              <h3 className="font-semibold text-gray-900">Invoice #{viewingInvoice.invoiceNumber || viewingInvoice.id}</h3>
+              <button onClick={() => setViewingInvoice(null)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
+            </div>
+            <div className="p-4">
+              <div
+                dangerouslySetInnerHTML={{ __html: buildInvoiceHtmlClient(viewingInvoice) }}
+              />
+              <div className="flex gap-2 mt-4 pt-4 border-t">
+                {viewingInvoice.status === 'draft' && (
+                  <button onClick={() => { onApprove(viewingInvoice.id); setViewingInvoice(null); }}
+                    className="flex-1 text-sm bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 font-medium">
+                    ✅ Approve
+                  </button>
+                )}
+                {(viewingInvoice.status === 'approved' || viewingInvoice.status === 'sent') && (
+                  <button onClick={() => { onSend(viewingInvoice.id); setViewingInvoice(null); }}
+                    disabled={!viewingInvoice.funeralHomeEmail}
+                    className="flex-1 text-sm bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 font-medium disabled:opacity-40">
+                    {viewingInvoice.status === 'sent' ? '📧 Resend' : '📧 Send Email'}
+                  </button>
+                )}
+                <button onClick={() => setViewingInvoice(null)}
+                  className="flex-1 text-sm border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50">
+                  Close
                 </button>
               </div>
             </div>
@@ -3121,20 +3315,27 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
                     <span className={`text-xs px-2 py-0.5 rounded-full border font-medium capitalize ${INVOICE_STATUS_COLORS[inv.status] || 'bg-gray-100 text-gray-700 border-gray-300'}`}>
                       {inv.status}
                     </span>
+                    {inv.invoiceNumber && <span className="text-xs font-mono font-semibold text-gray-600">#{inv.invoiceNumber}</span>}
                     <span className="text-xs font-mono text-gray-400">{inv.transportId}</span>
                   </div>
                   <p className="font-semibold text-gray-900">{inv.decedentName || '—'}</p>
+                  {inv.caseNumber && <p className="text-xs text-gray-500">Case# {inv.caseNumber}</p>}
                   <p className="text-sm text-gray-500">{inv.funeralHomeName}</p>
                   {inv.funeralHomeEmail && <p className="text-xs text-gray-400">{inv.funeralHomeEmail}</p>}
                   {inv.sentAt && <p className="text-xs text-green-600 mt-0.5">Sent {new Date(inv.sentAt).toLocaleDateString()}</p>}
                   {inv.approvedAt && !inv.sentAt && <p className="text-xs text-blue-600 mt-0.5">Approved {new Date(inv.approvedAt).toLocaleDateString()} by {inv.approvedBy}</p>}
                 </div>
                 <div className="flex-shrink-0 text-right">
-                  <p className="text-lg font-bold text-gray-900">${parseFloat(inv.totalCost).toFixed(2)}</p>
+                  <p className="text-lg font-bold text-gray-900">${parseFloat(inv.totalCost || 0).toFixed(2)}</p>
                   <p className="text-xs text-gray-400">{new Date(inv.createdAt).toLocaleDateString()}</p>
+                  {inv.paymentStatus === 'paid' && <span className="text-xs text-green-600 font-medium">PAID</span>}
                 </div>
               </div>
               <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                <button onClick={() => setViewingInvoice(inv)}
+                  className="flex-1 text-xs border border-gray-200 text-gray-600 py-1.5 px-3 rounded-lg hover:bg-gray-50 font-medium">
+                  👁 View
+                </button>
                 {inv.status === 'draft' && (
                   <button onClick={() => onApprove(inv.id)}
                     className="flex-1 text-xs bg-blue-600 text-white py-1.5 px-3 rounded-lg hover:bg-blue-700 font-medium">
@@ -3149,16 +3350,7 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
                     {inv.status === 'sent' ? '📧 Resend' : '📧 Send'}
                   </button>
                 )}
-                {inv.status === 'draft' && (
-                  <button onClick={() => onApprove(inv.id)}
-                    className="flex-1 text-xs border border-blue-200 text-blue-600 py-1.5 px-3 rounded-lg hover:bg-blue-50 font-medium">
-                    Approve &amp; Lock
-                  </button>
-                )}
               </div>
-              {inv.status === 'approved' && (
-                <InvoiceDocCount transportId={inv.transportId} />
-              )}
             </div>
           ))}
         </div>

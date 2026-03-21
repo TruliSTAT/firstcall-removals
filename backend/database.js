@@ -250,6 +250,33 @@ function migrateDb(db) {
     );
   `);
 
+  // Settings table (for invoice sequence, etc.)
+  db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);`);
+  db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('invoice_seq', '785')`).run();
+
+  // Invoice table: add new columns if missing
+  const invoiceNewCols = [
+    ['invoice_number', 'TEXT'],
+    ['service_date', 'TEXT'],
+    ['issue_date', 'TEXT'],
+    ['due_date', 'TEXT'],
+    ['case_number', 'TEXT'],
+    ['decedent_dob', 'TEXT'],
+    ['pickup_location', 'TEXT'],
+    ['delivery_location', 'TEXT'],
+    ['bill_to_location', 'TEXT'],
+    ['customer_name_full', 'TEXT'],
+    ['customer_street', 'TEXT'],
+    ['customer_city', 'TEXT'],
+    ['customer_state', 'TEXT'],
+    ['customer_zip', 'TEXT'],
+    ['line_items', 'TEXT'],
+    ['payment_status', "TEXT DEFAULT 'due'"],
+  ];
+  for (const [col, type] of invoiceNewCols) {
+    try { db.exec(`ALTER TABLE invoices ADD COLUMN ${col} ${type}`); } catch (_) {}
+  }
+
   seedFuneralHomes(db);
 }
 
