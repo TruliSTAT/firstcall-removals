@@ -1648,6 +1648,9 @@ const FuneralTransportApp = () => {
             />
             <h1 className="text-xl font-bold text-gray-900">STAT First Call Removals</h1>
             <p className="text-gray-600">Professional Decedent Transportation</p>
+            <a href="tel:+12819406525" className="inline-flex items-center gap-1.5 mt-2 text-gray-900 font-semibold text-lg hover:text-gray-600 transition-colors">
+              📞 (281) 940-6525
+            </a>
           </div>
           {!showRegister ? (
             <div className="space-y-4">
