@@ -29,6 +29,17 @@ function setToken(token) {
   else localStorage.removeItem('ft_token');
 }
 
+async function openAuthPdf(path) {
+  const headers = {};
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`/api${path}`, { headers });
+  if (!res.ok) { alert('Could not load PDF: ' + res.status); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+}
+
 async function apiRequest(method, path, body = null) {
   const headers = { 'Content-Type': 'application/json' };
   const token = getToken();
@@ -379,14 +390,12 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
       {/* Summary PDF */}
       {(userRole === 'admin' || userRole === 'employee') && (
         <div className="mt-2 pt-2 border-t border-gray-100">
-          <a
-            href={`/api/transports/${transport.id}/summary.pdf`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            onClick={() => openAuthPdf(`/transports/${transport.id}/summary.pdf`)}
             className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600"
           >
             <FileText className="w-3 h-3" />📄 Summary PDF
-          </a>
+          </button>
         </div>
       )}
 
@@ -5953,13 +5962,12 @@ const VaultTab = ({ transports, currentUser }) => {
                   {t.notes && <p className="text-xs text-gray-600 italic">Notes: {t.notes}</p>}
 
                   {/* Summary PDF */}
-                  <a
-                    href={`/api/transports/${t.id}/summary.pdf`}
-                    target="_blank" rel="noopener noreferrer"
+                  <button
+                    onClick={() => openAuthPdf(`/transports/${t.id}/summary.pdf`)}
                     className="inline-flex items-center gap-1 text-xs bg-gray-800 text-white px-3 py-1.5 rounded hover:bg-gray-700"
                   >
                     <FileText className="w-3 h-3" /> 📄 Summary PDF
-                  </a>
+                  </button>
 
                   {/* Attachments */}
                   <div>
