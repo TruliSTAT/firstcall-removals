@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { getDb, rowToTransport } = require('../database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const { alertNewTransport } = require('../lib/sendSMS');
 
 function fuzzyMatchFuneralHome(query, homes) {
   if (!query || !homes.length) return null;
@@ -294,7 +295,7 @@ router.post('/', authenticateToken, (req, res) => {
     pickupLocation, pickupLocationType, destination, destinationLocationType,
     decedentName, dateOfBirth, dateOfDeath, weight, funeralHomeName, funeralHomePhone,
     pickupContact, pickupPhone, destinationContact, destinationPhone,
-    caseNumber, estimatedMiles, notes, funeralHomeId
+    caseNumber, estimatedMiles, notes, funeralHomeId, scheduledPickupAt
   } = req.body;
 
   const w = parseInt(weight) || 0;
@@ -305,6 +306,18 @@ router.post('/', authenticateToken, (req, res) => {
   const fhId = funeralHomeId ? parseInt(funeralHomeId) : null;
 
   const db = getDb();
+
+  // Auto-generate case number if not provided: FCR-YYYYMMDD-NNNN
+  let finalCaseNumber = (caseNumber || '').trim() || null;
+  if (!finalCaseNumber) {
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const { dayCount } = db.prepare(
+      `SELECT COUNT(*) as dayCount FROM transports WHERE date = ?`
+    ).get(date);
+    const seq = String(dayCount + 1).padStart(4, '0');
+    finalCaseNumber = `FCR-${today}-${seq}`;
+  }
+
   db.prepare(`
     INSERT INTO transports (
       id, date, pickup_location, pickup_location_type, destination, destination_location_type,
@@ -312,10 +325,10 @@ router.post('/', authenticateToken, (req, res) => {
       pickup_contact, pickup_phone, destination_contact, destination_phone,
       case_number, estimated_miles, status, notes,
       pickup_fee, mileage_fee, ob_fee, admin_fee, total_cost,
-      created_by_user_id, funeral_home_id
+      created_by_user_id, funeral_home_id, scheduled_pickup_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?,
-      ?, ?, ?, ?, ?, ?, ?
+      ?, ?, ?, ?, ?, ?, ?, ?
     )
   `).run(
     id, date,
@@ -323,14 +336,19 @@ router.post('/', authenticateToken, (req, res) => {
     decedentName || null, dateOfBirth || null, dateOfDeath || null, w,
     funeralHomeName || null, funeralHomePhone || null,
     pickupContact || null, pickupPhone || null, destinationContact || null, destinationPhone || null,
-    caseNumber || null, m,
+    finalCaseNumber, m,
     notes || null,
     cost.pickupFee, cost.mileageFee, cost.obFee, cost.adminFee, cost.totalCost,
-    req.user.id, fhId
+    req.user.id, fhId, scheduledPickupAt || null
   );
 
   const row = getTransportWithNames(db, id);
-  res.status(201).json({ transport: rowToTransport(row) });
+  const created = rowToTransport(row);
+
+  // Fire-and-forget SMS alert to dispatch team
+  alertNewTransport(created);
+
+  res.status(201).json({ transport: created });
 });
 
 // PUT /api/transports/:id/assign — Admin driver & vehicle assignment
@@ -423,7 +441,7 @@ router.put('/:id', authenticateToken, (req, res) => {
     actualMiles, pickupLocation, pickupLocationType, destination, destinationLocationType,
     decedentName, dateOfBirth, dateOfDeath, weight, funeralHomeName, funeralHomePhone,
     pickupContact, pickupPhone, destinationContact, destinationPhone, caseNumber, estimatedMiles,
-    notes, eta
+    notes, eta, scheduledPickupAt
   } = req.body;
 
   const updates = [];
@@ -453,6 +471,7 @@ router.put('/:id', authenticateToken, (req, res) => {
   if (estimatedMiles !== undefined) { updates.push('estimated_miles = ?'); values.push(estimatedMiles); }
   if (notes !== undefined) { updates.push('notes = ?'); values.push(notes); }
   if (eta !== undefined) { updates.push('eta = ?'); values.push(eta); }
+  if (scheduledPickupAt !== undefined) { updates.push('scheduled_pickup_at = ?'); values.push(scheduledPickupAt); }
 
   // Set status transition timestamps
   if (status && STATUS_TIMESTAMP[status]) {
@@ -513,6 +532,47 @@ router.delete('/:id', authenticateToken, requireRole('admin'), (req, res) => {
 
   db.prepare('DELETE FROM transports WHERE id = ?').run(id);
   res.json({ message: 'Transport deleted' });
+});
+
+// ─── Transport Chat ───────────────────────────────────────────────────────────
+
+function canAccessTransport(db, transportId, user) {
+  if (user.role === 'admin' || user.role === 'employee') return true;
+  const t = db.prepare('SELECT created_by_user_id FROM transports WHERE id = ?').get(transportId);
+  return t && t.created_by_user_id === user.id;
+}
+
+// GET /api/transports/:id/messages
+router.get('/:id/messages', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const db = getDb();
+  if (!canAccessTransport(db, id, req.user)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+  const messages = db.prepare(
+    'SELECT * FROM transport_messages WHERE transport_id = ? ORDER BY created_at ASC'
+  ).all(id);
+  res.json({ messages });
+});
+
+// POST /api/transports/:id/messages
+router.post('/:id/messages', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { message } = req.body;
+  if (!message || !message.trim()) return res.status(400).json({ error: 'message is required' });
+
+  const db = getDb();
+  if (!canAccessTransport(db, id, req.user)) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const result = db.prepare(
+    `INSERT INTO transport_messages (transport_id, user_id, username, role, message)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(id, req.user.id, req.user.username, req.user.role, message.trim());
+
+  const msg = db.prepare('SELECT * FROM transport_messages WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json({ message: msg });
 });
 
 module.exports = router;

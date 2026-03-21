@@ -3,7 +3,7 @@ import {
   MapPin, Plus, Truck, Clock, Phone, User, Calendar, Weight,
   CheckCircle, LogIn, Users, Settings, Navigation, Bell, AlertCircle,
   ChevronRight, Activity, Package, Flag, Loader, Wand2, X, ChevronDown, ChevronUp,
-  Building2, Upload, Edit2, Trash2, Wrench
+  Building2, Upload, Edit2, Trash2, Wrench, Copy, FileText, History, Search
 } from 'lucide-react';
 
 // ─── API upload helper (for multipart/form-data) ─────────────────────────────
@@ -225,7 +225,7 @@ const AdvanceStatusButton = ({ transport, onAdvance, loading, etaValue, onEtaCha
 };
 
 // Dispatch board card
-const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles }) => {
+const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles, onEdit }) => {
   const [showAssign, setShowAssign] = useState(false);
   const [selDriver, setSelDriver] = useState(transport.assignedDriverId || '');
   const [selVehicle, setSelVehicle] = useState(transport.assignedVehicleId || '');
@@ -244,17 +244,29 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
     }`}>
       <div className="flex justify-between items-start gap-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-mono text-gray-400">#{transport.id}</span>
             <StatusBadge status={transport.status} />
+            {transport.scheduledPickupAt && (
+              <span className="text-xs text-indigo-600 font-medium">⏰ {new Date(transport.scheduledPickupAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+            )}
           </div>
           <p className="font-semibold text-gray-900 truncate">{transport.decedentName || '—'}</p>
           <p className="text-xs text-gray-500">{transport.funeralHomeName}</p>
         </div>
-        <div className="text-right text-xs text-gray-500 flex-shrink-0">
+        <div className="text-right text-xs text-gray-500 flex-shrink-0 flex flex-col items-end gap-1">
           <div>{timeSince(transport.createdAt)}</div>
           {transport.assignedDriver && (
             <div className="text-blue-600 font-medium">{transport.assignedDriver}</div>
+          )}
+          {userRole === 'admin' && (
+            <button
+              onClick={() => onEdit?.(transport)}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 border border-gray-200 hover:border-blue-300 rounded px-1.5 py-0.5"
+              title="Edit transport"
+            >
+              <Edit2 className="w-3 h-3" />✏️ Edit
+            </button>
           )}
         </div>
       </div>
@@ -338,7 +350,7 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
 
 // ─── Dispatch Board ───────────────────────────────────────────────────────────
 
-const DispatchBoard = ({ transports, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles }) => {
+const DispatchBoard = ({ transports, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles, onEdit }) => {
   const now = Date.now();
   const yesterday = now - 24 * 60 * 60 * 1000;
 
@@ -389,6 +401,7 @@ const DispatchBoard = ({ transports, userRole, onAdvance, loading, etaValues, se
                     onAssign={onAssign}
                     drivers={drivers}
                     vehicles={vehicles}
+                    onEdit={onEdit}
                   />
                 ))}
               </div>
@@ -528,8 +541,8 @@ const VEHICLE_STATUS_COLORS = {
 const EMPTY_DRIVER_FORM = { name: '', status: 'Available', currentLocation: '', phone: '', notes: '' };
 const EMPTY_VEHICLE_FORM = { name: '', type: '', status: 'Available', driverId: '', notes: '' };
 
-const FleetTab = ({ drivers, vehicles, onRefresh }) => {
-  const [fleetSection, setFleetSection] = useState('drivers'); // 'drivers' | 'vehicles'
+const FleetTab = ({ drivers, vehicles, onRefresh, adminUsersData, adminUsersLoading, adminUsersSearch, setAdminUsersSearch, onLoadUsers }) => {
+  const [fleetSection, setFleetSection] = useState('drivers'); // 'drivers' | 'vehicles' | 'users'
 
   // Driver state
   const [showDriverForm, setShowDriverForm] = useState(false);
@@ -677,18 +690,24 @@ const FleetTab = ({ drivers, vehicles, onRefresh }) => {
       </div>
 
       {/* Sub-nav */}
-      <div className="flex gap-2 border-b border-gray-200">
+      <div className="flex gap-2 border-b border-gray-200 overflow-x-auto">
         <button
           onClick={() => { setFleetSection('drivers'); setShowDriverForm(false); setShowVehicleForm(false); }}
-          className={`py-2 px-4 text-sm font-medium border-b-2 -mb-px ${fleetSection === 'drivers' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`flex-shrink-0 py-2 px-4 text-sm font-medium border-b-2 -mb-px ${fleetSection === 'drivers' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
           <User className="w-4 h-4 inline mr-1" />Drivers ({drivers.length})
         </button>
         <button
           onClick={() => { setFleetSection('vehicles'); setShowVehicleForm(false); setShowDriverForm(false); }}
-          className={`py-2 px-4 text-sm font-medium border-b-2 -mb-px ${fleetSection === 'vehicles' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          className={`flex-shrink-0 py-2 px-4 text-sm font-medium border-b-2 -mb-px ${fleetSection === 'vehicles' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
         >
           <Truck className="w-4 h-4 inline mr-1" />Vehicles ({vehicles.length})
+        </button>
+        <button
+          onClick={() => { setFleetSection('users'); setShowDriverForm(false); setShowVehicleForm(false); }}
+          className={`flex-shrink-0 py-2 px-4 text-sm font-medium border-b-2 -mb-px ${fleetSection === 'users' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+        >
+          👥 Users
         </button>
       </div>
 
@@ -823,6 +842,17 @@ const FleetTab = ({ drivers, vehicles, onRefresh }) => {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Users Section ────────────────────────────────────────────────── */}
+      {fleetSection === 'users' && (
+        <AdminUsersView
+          adminUsersData={adminUsersData}
+          adminUsersLoading={adminUsersLoading}
+          adminUsersSearch={adminUsersSearch}
+          setAdminUsersSearch={setAdminUsersSearch}
+          onLoadUsers={onLoadUsers}
+        />
       )}
 
       {/* ── Vehicles Section ─────────────────────────────────────────────── */}
@@ -993,7 +1023,9 @@ const EMPTY_FORM = {
   destinationPhone: '',
   caseNumber: '',
   estimatedMiles: 0,
-  notes: ''
+  notes: '',
+  isImmediate: true,
+  scheduledPickupAt: '',
 };
 
 const EMPTY_FH_FORM = {
@@ -1037,8 +1069,16 @@ const FuneralTransportApp = () => {
   const [smartParsing, setSmartParsing] = useState(false);
   const [smartParseResult, setSmartParseResult] = useState(null);
   const [smartParseError, setSmartParseError] = useState('');
+  const [smartPasteImage, setSmartPasteImage] = useState(null); // { base64, preview }
+  const [showSmartPasteExample, setShowSmartPasteExample] = useState(false);
   const [aiFilledFields, setAiFilledFields] = useState({});
   const [matchedFuneralHome, setMatchedFuneralHome] = useState(null);
+  const [submitSuccess, setSubmitSuccess] = useState(null); // { caseNumber }
+  const [copiedId, setCopiedId] = useState(null); // transport id that just got copied
+  const [editTransport, setEditTransport] = useState(null); // transport being edited in modal
+  const [adminUsersData, setAdminUsersData] = useState(null);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
+  const [adminUsersSearch, setAdminUsersSearch] = useState('');
 
   // Funeral homes
   const [funeralHomes, setFuneralHomes] = useState([]);
@@ -1265,17 +1305,38 @@ const FuneralTransportApp = () => {
         weight: parseInt(formData.weight) || 0,
         estimatedMiles: parseInt(formData.estimatedMiles) || 0,
         funeralHomeId: formData.funeralHomeId || undefined,
+        scheduledPickupAt: formData.isImmediate ? null : (formData.scheduledPickupAt || null),
       });
       setTransports(prev => [transport, ...prev]);
       setFormData(EMPTY_FORM);
       setAiFilledFields({});
       setShowForm(false);
+      setSubmitSuccess({ caseNumber: transport.caseNumber });
+      setTimeout(() => setSubmitSuccess(null), 5000);
     } catch (err) {
       setApiError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  const handleCopyCase = (caseNum, transportId) => {
+    navigator.clipboard.writeText(caseNum).catch(() => {});
+    setCopiedId(transportId);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const fetchAdminUsers = useCallback(async () => {
+    setAdminUsersLoading(true);
+    try {
+      const data = await apiRequest('GET', '/auth/admin/users-by-funeral-home');
+      setAdminUsersData(data);
+    } catch (err) {
+      console.error('Failed to load users:', err.message);
+    } finally {
+      setAdminUsersLoading(false);
+    }
+  }, []);
 
   const assignDriverAndVehicle = async (requestId, driverId, vehicleId) => {
     if (!driverId && !vehicleId) {
@@ -1571,7 +1632,7 @@ const FuneralTransportApp = () => {
                   onClick={() => { setShowRegister(true); setLoginError(''); }}
                   className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
                 >
-                  New here? Create an account →
+                  First Time here — click here to get access →
                 </button>
               </div>
             </div>
@@ -1691,7 +1752,7 @@ const FuneralTransportApp = () => {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-blue-900 text-white p-4 shadow-lg">
+      <div className="bg-gray-900 text-white p-4 shadow-lg">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <img
@@ -1701,7 +1762,7 @@ const FuneralTransportApp = () => {
             />
             <div>
             <h1 className="text-xl font-bold">STAT First Call Removals</h1>
-            <p className="text-blue-200 text-sm">
+            <p className="text-gray-300 text-sm">
               {userRole && userRole.replace('_', ' ').toUpperCase()} Portal
               {currentUser && <span className="ml-2 opacity-70">— {currentUser.username}</span>}
               {lastRefresh && (
@@ -1721,7 +1782,7 @@ const FuneralTransportApp = () => {
                 </span>
               </div>
             )}
-            <button onClick={handleLogout} className="text-blue-200 hover:text-white text-sm">
+            <button onClick={handleLogout} className="text-gray-300 hover:text-white text-sm">
               Logout
             </button>
           </div>
@@ -1740,6 +1801,12 @@ const FuneralTransportApp = () => {
                 <Clock className="w-4 h-4 inline mr-1" />My Transports
                 {alerts.length > 0 && <span className="ml-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{alerts.length}</span>}
               </TabBtn>
+              <TabBtn active={activeTab === 'history'} onClick={() => setActiveTab('history')}>
+                📋 History
+              </TabBtn>
+              <TabBtn active={activeTab === 'documents'} onClick={() => setActiveTab('documents')}>
+                📄 Documents
+              </TabBtn>
             </>
           )}
 
@@ -1749,11 +1816,17 @@ const FuneralTransportApp = () => {
                 <Activity className="w-4 h-4 inline mr-1" />Dispatch Board
                 {pendingCount > 0 && <span className="ml-1 bg-yellow-500 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingCount}</span>}
               </TabBtn>
+              <TabBtn active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')}>
+                📅 Schedule
+              </TabBtn>
               <TabBtn active={activeTab === 'assignments'} onClick={() => setActiveTab('assignments')}>
                 <Users className="w-4 h-4 inline mr-1" />Assignments
               </TabBtn>
               <TabBtn active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')}>
                 <Settings className="w-4 h-4 inline mr-1" />Dashboard
+              </TabBtn>
+              <TabBtn active={activeTab === 'documents'} onClick={() => setActiveTab('documents')}>
+                📄 Documents
               </TabBtn>
               {userRole === 'admin' && (
                 <>
@@ -1779,6 +1852,18 @@ const FuneralTransportApp = () => {
           </div>
         )}
 
+        {/* ── Submit Success Confirmation ──────────────────────────────── */}
+        {submitSuccess && (
+          <div className="mb-4 bg-green-50 border border-green-300 text-green-800 px-4 py-3 rounded-lg flex items-center gap-3 shadow-sm">
+            <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold">✅ Request Received</p>
+              <p className="text-sm">Case <span className="font-mono font-bold">{submitSuccess.caseNumber}</span> — We'll contact you when a driver is assigned.</p>
+            </div>
+            <button onClick={() => setSubmitSuccess(null)} className="text-green-500 hover:text-green-700 text-xl leading-none">×</button>
+          </div>
+        )}
+
         {/* ── New Request Tab (Funeral Homes) ─────────────────────────── */}
         {activeTab === 'request' && userRole === 'funeral_home' && (
           <div>
@@ -1799,19 +1884,80 @@ const FuneralTransportApp = () => {
                     {!smartParseResult ? (
                       <>
                         <p className="text-sm text-gray-600">Paste a text message, email, or iMessage forward and we'll extract the transport details automatically.</p>
+
+                        {/* Image input options */}
+                        <div className="flex gap-2">
+                          <label className="flex-1 flex items-center justify-center gap-2 py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-purple-400 hover:text-purple-600 cursor-pointer transition-colors">
+                            📷 Take Photo
+                            <input type="file" accept="image/*" capture="environment" className="hidden"
+                              onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onload = ev => setSmartPasteImage({ base64: ev.target.result, preview: ev.target.result });
+                                reader.readAsDataURL(file);
+                              }} />
+                          </label>
+                          <label className="flex-1 flex items-center justify-center gap-2 py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-purple-400 hover:text-purple-600 cursor-pointer transition-colors">
+                            🖼️ Upload Screenshot
+                            <input type="file" accept="image/*" className="hidden"
+                              onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onload = ev => setSmartPasteImage({ base64: ev.target.result, preview: ev.target.result });
+                                reader.readAsDataURL(file);
+                              }} />
+                          </label>
+                        </div>
+                        {smartPasteImage && (
+                          <div className="flex items-center gap-3 bg-purple-50 border border-purple-200 rounded-lg p-3">
+                            <img src={smartPasteImage.preview} alt="preview" className="w-16 h-16 object-cover rounded border border-purple-200" />
+                            <div className="flex-1 text-sm text-purple-800">
+                              📸 Image captured — paste or type any additional text below, then click Parse
+                            </div>
+                            <button onClick={() => setSmartPasteImage(null)} className="text-purple-400 hover:text-purple-600"><X className="w-4 h-4" /></button>
+                          </div>
+                        )}
+
                         <textarea
                           value={smartPasteText}
                           onChange={e => setSmartPasteText(e.target.value)}
                           className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                          rows={8}
-                          placeholder="Paste your text or email here...&#10;&#10;Example: Hi, I need a transport for John Smith DOB 3/15/1942, passed 3/14/2026, pickup from St. Mary Hospital room 412, Chicago IL, destination Eternal Rest Funeral Home, 123 Main St, Oak Park. Contact nurse station 312-555-0100. Weight approx 180lbs."
+                          rows={6}
+                          placeholder="Paste your text or email here..."
                         />
+
+                        {/* Collapsible example */}
+                        <div>
+                          <button
+                            onClick={() => setShowSmartPasteExample(p => !p)}
+                            className="text-xs text-purple-600 hover:text-purple-800 flex items-center gap-1"
+                          >
+                            {showSmartPasteExample ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            See example text →
+                          </button>
+                          {showSmartPasteExample && (
+                            <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-700 italic">
+                              "This is a call for John Smith, DOB 1942-03-15, DOD 2026-03-20. Pickup from 123 Main St Houston TX (Hospital). Weight approx 180 lbs. Contact: Jane Smith 713-555-0100. Delivering to Callaway Jones Funeral Home."
+                            </div>
+                          )}
+                        </div>
+
                         {smartParseError && (
                           <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{smartParseError}</div>
                         )}
                         <button
-                          onClick={handleSmartParse}
-                          disabled={smartParsing || !smartPasteText.trim()}
+                          onClick={() => {
+                            if (smartPasteImage) {
+                              setSmartPasteText(prev =>
+                                prev + (prev ? '\n' : '') + '[Image attached — OCR not yet available, please type key details below]'
+                              );
+                              setSmartPasteImage(null);
+                            }
+                            handleSmartParse();
+                          }}
+                          disabled={smartParsing || (!smartPasteText.trim() && !smartPasteImage)}
                           className="w-full bg-purple-600 text-white py-2.5 px-4 rounded-lg font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center justify-center gap-2"
                         >
                           {smartParsing ? <Loader className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
@@ -1980,28 +2126,33 @@ const FuneralTransportApp = () => {
                     </div>
                   </div>
 
-                  {/* Cost Preview */}
-                  {formData.weight && formData.estimatedMiles && (
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                      <h3 className="font-medium text-gray-700 mb-2">Cost Estimate</h3>
-                      {(() => {
-                        const b = calculateDetailedCost(
-                          formData.pickupLocationType,
-                          parseInt(formData.weight) || 0,
-                          parseInt(formData.estimatedMiles) || 0
-                        );
-                        return (
-                          <div className="text-sm space-y-1">
-                            <div className="flex justify-between"><span>Pickup Fee ({formData.pickupLocationType}):</span><span>${b.pickupFee}</span></div>
-                            {b.mileageFee > 0 && <div className="flex justify-between"><span>Mileage ({formData.estimatedMiles - 30} mi × $3.50):</span><span>${b.mileageFee.toFixed(2)}</span></div>}
-                            {b.obFee > 0 && <div className="flex justify-between"><span>OB Fee ({formData.weight} lbs):</span><span>${b.obFee}</span></div>}
-                            <div className="flex justify-between"><span>Administrative Fee:</span><span>${b.adminFee}</span></div>
-                            <div className="flex justify-between font-semibold border-t pt-1"><span>Total Cost:</span><span>${b.totalCost.toFixed(2)}</span></div>
-                          </div>
-                        );
-                      })()}
+                  {/* Live Cost Preview */}
+                  <div className={`p-4 rounded-lg border ${formData.weight || formData.estimatedMiles ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="font-medium text-gray-700">Estimated Cost</h3>
+                      <span className="text-xs text-gray-400 italic">Final cost confirmed after transport</span>
                     </div>
-                  )}
+                    {(() => {
+                      const b = calculateDetailedCost(
+                        formData.pickupLocationType,
+                        parseInt(formData.weight) || 0,
+                        parseInt(formData.estimatedMiles) || 0
+                      );
+                      return (
+                        <div className="text-sm space-y-1">
+                          <div className="flex justify-between text-gray-600"><span>Pickup Fee ({formData.pickupLocationType}):</span><span>${b.pickupFee}</span></div>
+                          {b.mileageFee > 0 && <div className="flex justify-between text-gray-600"><span>Mileage ({Math.max(0, (parseInt(formData.estimatedMiles) || 0) - 30)} mi × $3.50):</span><span>${b.mileageFee.toFixed(2)}</span></div>}
+                          {!b.mileageFee && <div className="flex justify-between text-gray-400"><span>Mileage (first 30 mi included):</span><span>$0.00</span></div>}
+                          {b.obFee > 0 && <div className="flex justify-between text-gray-600"><span>OB Fee ({formData.weight} lbs):</span><span>${b.obFee}</span></div>}
+                          <div className="flex justify-between text-gray-600"><span>Administrative Fee:</span><span>${b.adminFee}</span></div>
+                          <div className="flex justify-between font-semibold border-t border-blue-200 pt-1 text-gray-900">
+                            <span>Total Estimate:</span>
+                            <span className="text-blue-700">${b.totalCost.toFixed(2)}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
 
                   {/* Decedent Information */}
                   <div className="border-b pb-4">
@@ -2090,6 +2241,35 @@ const FuneralTransportApp = () => {
                     </div>
                   </div>
 
+                  {/* Scheduling */}
+                  <div className="border-b pb-4">
+                    <h3 className="font-medium text-gray-700 mb-3">Pickup Timing</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="isImmediate" checked={formData.isImmediate}
+                            onChange={() => handleInputChange('isImmediate', true)}
+                            className="w-4 h-4 text-blue-600" />
+                          <span className="text-sm font-medium text-gray-700">Immediate pickup</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="isImmediate" checked={!formData.isImmediate}
+                            onChange={() => handleInputChange('isImmediate', false)}
+                            className="w-4 h-4 text-blue-600" />
+                          <span className="text-sm font-medium text-gray-700">Schedule for later</span>
+                        </label>
+                      </div>
+                      {!formData.isImmediate && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 mb-1">Scheduled Pickup Date &amp; Time</label>
+                          <input type="datetime-local" value={formData.scheduledPickupAt}
+                            onChange={e => handleInputChange('scheduledPickupAt', e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Notes */}
                   <div>
                     <div className="flex items-center gap-2 mb-3">
@@ -2110,15 +2290,18 @@ const FuneralTransportApp = () => {
                   </div>
                 </div>
 
-                <div className="flex gap-3 mt-6">
-                  <button onClick={() => { setShowForm(false); setAiFilledFields({}); }}
-                    className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50">
-                    Cancel
-                  </button>
-                  <button onClick={handleSubmitRequest} disabled={loading}
-                    className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
-                    {loading ? 'Submitting...' : 'Submit Request'}
-                  </button>
+                {/* Sticky submit button */}
+                <div className="sticky bottom-4 mt-6">
+                  <div className="flex gap-3 bg-white p-3 rounded-xl shadow-lg border border-gray-100">
+                    <button onClick={() => { setShowForm(false); setAiFilledFields({}); }}
+                      className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50">
+                      Cancel
+                    </button>
+                    <button onClick={handleSubmitRequest} disabled={loading}
+                      className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">
+                      {loading ? 'Submitting...' : 'Submit Request'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -2137,8 +2320,8 @@ const FuneralTransportApp = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                {myTransports.map((transport) => (
-                  <TransportCard key={transport.id} transport={transport} onSaveNotes={saveNotes} />
+                {myTransports.filter(t => t.status !== 'Completed').map((transport) => (
+                  <TransportCard key={transport.id} transport={transport} onSaveNotes={saveNotes} onCopyCase={handleCopyCase} copiedId={copiedId} />
                 ))}
               </div>
             )}
@@ -2148,6 +2331,23 @@ const FuneralTransportApp = () => {
         {/* ── Dispatch Board (Admin/Employee) ─────────────────────────── */}
         {activeTab === 'dispatch' && (userRole === 'admin' || userRole === 'employee') && (
           <div>
+            {editTransport && (
+              <EditTransportModal
+                transport={editTransport}
+                drivers={drivers}
+                vehicles={vehicles}
+                onClose={() => setEditTransport(null)}
+                onSave={async (id, updates) => {
+                  try {
+                    const { transport: updated } = await apiRequest('PUT', `/transports/${id}`, updates);
+                    setTransports(prev => prev.map(t => t.id === id ? updated : t));
+                    setEditTransport(null);
+                  } catch (err) {
+                    setApiError(err.message);
+                  }
+                }}
+              />
+            )}
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Live Dispatch Board</h2>
               <span className="text-xs text-gray-400 flex items-center gap-1">
@@ -2164,6 +2364,7 @@ const FuneralTransportApp = () => {
               onAssign={assignDriverAndVehicle}
               drivers={drivers}
               vehicles={vehicles}
+              onEdit={t => setEditTransport(t)}
             />
           </div>
         )}
@@ -2237,12 +2438,127 @@ const FuneralTransportApp = () => {
           </div>
         )}
 
+        {/* ── History Tab (Funeral Home) ───────────────────────────────── */}
+        {activeTab === 'history' && userRole === 'funeral_home' && (
+          <div>
+            <h2 className="text-lg font-semibold mb-4">📋 Completed Transports</h2>
+            {(() => {
+              const completed = myTransports.filter(t => t.status === 'Completed').sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+              if (!completed.length) return (
+                <div className="text-center py-12">
+                  <History className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                  <p className="text-gray-500">No completed transports yet</p>
+                </div>
+              );
+              return (
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left p-3 font-medium text-gray-600">Case #</th>
+                        <th className="text-left p-3 font-medium text-gray-600">Decedent</th>
+                        <th className="text-left p-3 font-medium text-gray-600 hidden sm:table-cell">Date</th>
+                        <th className="text-right p-3 font-medium text-gray-600">Cost</th>
+                        <th className="text-center p-3 font-medium text-gray-600">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {completed.map(t => (
+                        <tr key={t.id} className="hover:bg-gray-50">
+                          <td className="p-3">
+                            <div className="flex items-center gap-1">
+                              <span className="font-mono text-xs text-gray-600">{t.caseNumber || t.id}</span>
+                              {t.caseNumber && (
+                                <button onClick={() => handleCopyCase(t.caseNumber, t.id)} className="text-gray-300 hover:text-blue-500" title="Copy">
+                                  {copiedId === t.id ? <span className="text-green-600 text-xs">✓</span> : <Copy className="w-3 h-3" />}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 font-medium text-gray-900">{t.decedentName || '—'}</td>
+                          <td className="p-3 text-gray-500 hidden sm:table-cell">{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : '—'}</td>
+                          <td className="p-3 text-right font-semibold text-gray-800">${t.totalCost?.toFixed(2) || '—'}</td>
+                          <td className="p-3 text-center"><StatusBadge status={t.status} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ── Schedule Tab (Admin/Employee) ────────────────────────────── */}
+        {activeTab === 'schedule' && (userRole === 'admin' || userRole === 'employee') && (
+          <div>
+            <h2 className="text-lg font-semibold mb-4">📅 Scheduled Pickups</h2>
+            {(() => {
+              const scheduled = transports
+                .filter(t => t.scheduledPickupAt && t.status === 'Pending')
+                .sort((a, b) => new Date(a.scheduledPickupAt) - new Date(b.scheduledPickupAt));
+              if (!scheduled.length) return (
+                <div className="text-center py-12">
+                  <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                  <p className="text-gray-500">No upcoming scheduled transports</p>
+                  <p className="text-xs text-gray-400 mt-1">Scheduled transports with Pending status appear here</p>
+                </div>
+              );
+              return (
+                <div className="space-y-2">
+                  {scheduled.map(t => (
+                    <div key={t.id} className="bg-white rounded-lg border border-indigo-100 shadow-sm p-4 flex items-center gap-4">
+                      <div className="flex-shrink-0 text-center bg-indigo-50 rounded-lg p-2 min-w-[60px]">
+                        <div className="text-xs text-indigo-500 font-medium">
+                          {new Date(t.scheduledPickupAt).toLocaleDateString([], { month: 'short' }).toUpperCase()}
+                        </div>
+                        <div className="text-xl font-bold text-indigo-700">
+                          {new Date(t.scheduledPickupAt).getDate()}
+                        </div>
+                        <div className="text-xs text-indigo-500">
+                          {new Date(t.scheduledPickupAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-gray-900 truncate">{t.decedentName || '—'}</p>
+                          <StatusBadge status={t.status} />
+                        </div>
+                        <p className="text-sm text-gray-500 truncate">{t.funeralHomeName}</p>
+                        <p className="text-xs text-gray-400 truncate">{t.pickupLocation} → {t.destination}</p>
+                      </div>
+                      <div className="flex-shrink-0">
+                        <button
+                          onClick={() => setActiveTab('dispatch')}
+                          className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 font-medium"
+                        >
+                          View
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ── Documents Tab ────────────────────────────────────────────── */}
+        {activeTab === 'documents' && (
+          <DocumentsPanel transports={transports} />
+        )}
+
         {/* ── Fleet Tab (Admin only) ───────────────────────────────────── */}
         {activeTab === 'fleet' && userRole === 'admin' && (
           <FleetTab
             drivers={drivers}
             vehicles={vehicles}
             onRefresh={fetchData}
+            adminUsersData={adminUsersData}
+            adminUsersLoading={adminUsersLoading}
+            adminUsersSearch={adminUsersSearch}
+            setAdminUsersSearch={setAdminUsersSearch}
+            onLoadUsers={fetchAdminUsers}
           />
         )}
 
@@ -2417,6 +2733,507 @@ const FuneralTransportApp = () => {
   );
 };
 
+// ─── Edit Transport Modal ─────────────────────────────────────────────────────
+
+const EditTransportModal = ({ transport, drivers, vehicles, onClose, onSave }) => {
+  const [form, setForm] = useState({
+    decedentName: transport.decedentName || '',
+    pickupLocation: transport.pickupLocation || '',
+    pickupLocationType: transport.pickupLocationType || 'Residential',
+    destination: transport.destination || '',
+    destinationLocationType: transport.destinationLocationType || 'Funeral Home/Care Center',
+    weight: transport.weight || '',
+    estimatedMiles: transport.estimatedMiles || '',
+    notes: transport.notes || '',
+    status: transport.status || 'Pending',
+    scheduledPickupAt: transport.scheduledPickupAt ? transport.scheduledPickupAt.slice(0, 16) : '',
+    assignedDriverId: transport.assignedDriverId || '',
+    assignedVehicleId: transport.assignedVehicleId || '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(transport.id, {
+      ...form,
+      weight: parseInt(form.weight) || 0,
+      estimatedMiles: parseInt(form.estimatedMiles) || 0,
+      scheduledPickupAt: form.scheduledPickupAt || null,
+      assignedDriverId: form.assignedDriverId || undefined,
+      assignedVehicleId: form.assignedVehicleId || undefined,
+    });
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
+          <h3 className="font-semibold text-gray-900">✏️ Edit Transport — {transport.id}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          {[
+            { label: 'Decedent Name', key: 'decedentName', type: 'text' },
+            { label: 'Pickup Location', key: 'pickupLocation', type: 'text' },
+            { label: 'Destination', key: 'destination', type: 'text' },
+            { label: 'Weight (lbs)', key: 'weight', type: 'number' },
+            { label: 'Estimated Miles', key: 'estimatedMiles', type: 'number' },
+            { label: 'Notes', key: 'notes', type: 'textarea' },
+          ].map(({ label, key, type }) => (
+            <div key={key}>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+              {type === 'textarea' ? (
+                <textarea value={form[key]} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded text-sm" rows={2} />
+              ) : (
+                <input type={type} value={form[key]} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                  className="w-full p-2 border border-gray-300 rounded text-sm" />
+              )}
+            </div>
+          ))}
+
+          {[
+            { label: 'Pickup Location Type', key: 'pickupLocationType' },
+            { label: 'Destination Location Type', key: 'destinationLocationType' },
+          ].map(({ label, key }) => (
+            <div key={key}>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+              <select value={form[key]} onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                className="w-full p-2 border border-gray-300 rounded text-sm">
+                {['Residential','Nursing Home','ALF','Hospital','Funeral Home/Care Center','State Facility','Hospice','MEO/Lab'].map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+          ))}
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+            <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}
+              className="w-full p-2 border border-gray-300 rounded text-sm">
+              {['Pending','Accepted','En Route','Arrived','Loaded','Completed'].map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Scheduled Pickup</label>
+            <input type="datetime-local" value={form.scheduledPickupAt}
+              onChange={e => setForm(p => ({ ...p, scheduledPickupAt: e.target.value }))}
+              className="w-full p-2 border border-gray-300 rounded text-sm" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Driver</label>
+              <select value={form.assignedDriverId} onChange={e => setForm(p => ({ ...p, assignedDriverId: e.target.value }))}
+                className="w-full p-2 border border-gray-300 rounded text-sm">
+                <option value="">— None —</option>
+                {(drivers || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Vehicle</label>
+              <select value={form.assignedVehicleId} onChange={e => setForm(p => ({ ...p, assignedVehicleId: e.target.value }))}
+                className="w-full p-2 border border-gray-300 rounded text-sm">
+                <option value="">— None —</option>
+                {(vehicles || []).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div className="p-4 border-t flex gap-3 sticky bottom-0 bg-white">
+          <button onClick={onClose} className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Documents Panel ─────────────────────────────────────────────────────────
+
+const DEFAULT_TEMPLATES = [
+  {
+    id: 'tpl-1',
+    name: 'First Call Authorization',
+    fields: ['decedent_name', 'date_of_death', 'pickup_location', 'funeral_home_name', 'funeral_home_phone', 'authorized_by', 'signature', 'date_signed'],
+  },
+  {
+    id: 'tpl-2',
+    name: 'Transport Release Form',
+    fields: ['decedent_name', 'pickup_location', 'destination', 'driver_name', 'vehicle_id', 'notes', 'signature', 'date_signed'],
+  },
+  {
+    id: 'tpl-3',
+    name: 'Chain of Custody',
+    fields: ['decedent_name', 'case_number', 'pickup_contact', 'pickup_phone', 'destination_contact', 'destination_phone', 'signature', 'date_signed'],
+  },
+];
+
+function getTemplates() {
+  try {
+    const stored = localStorage.getItem('fcr_doc_templates');
+    if (stored) return JSON.parse(stored);
+  } catch (_) {}
+  localStorage.setItem('fcr_doc_templates', JSON.stringify(DEFAULT_TEMPLATES));
+  return DEFAULT_TEMPLATES;
+}
+
+function saveTemplates(tpls) {
+  localStorage.setItem('fcr_doc_templates', JSON.stringify(tpls));
+}
+
+const TRANSPORT_FIELD_MAP = {
+  decedent_name: 'decedentName',
+  date_of_death: 'dateOfDeath',
+  pickup_location: 'pickupLocation',
+  funeral_home_name: 'funeralHomeName',
+  funeral_home_phone: 'funeralHomePhone',
+  pickup_contact: 'pickupContact',
+  pickup_phone: 'pickupPhone',
+  destination: 'destination',
+  destination_contact: 'destinationContact',
+  destination_phone: 'destinationPhone',
+  case_number: 'caseNumber',
+  driver_name: 'assignedDriver',
+  vehicle_id: 'assignedVehicleId',
+  notes: 'notes',
+};
+
+const DocumentsPanel = ({ transports }) => {
+  const [section, setSection] = useState('templates'); // 'templates' | 'fill'
+  const [templates, setTemplates] = useState(getTemplates);
+  const [selectedTpl, setSelectedTpl] = useState('');
+  const [selectedTransport, setSelectedTransport] = useState('');
+  const [fieldValues, setFieldValues] = useState({});
+  const [signatureData, setSignatureData] = useState(null);
+  const canvasRef = useRef(null);
+  const isDrawing = useRef(false);
+
+  // Canvas drawing (mouse + touch)
+  const setupCanvas = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const getPos = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches?.[0] || e;
+      return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+    };
+    const onStart = (e) => { e.preventDefault(); isDrawing.current = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); };
+    const onMove = (e) => { e.preventDefault(); if (!isDrawing.current) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+    const onEnd = () => { isDrawing.current = false; setSignatureData(canvas.toDataURL()); };
+
+    canvas.addEventListener('mousedown', onStart);
+    canvas.addEventListener('mousemove', onMove);
+    canvas.addEventListener('mouseup', onEnd);
+    canvas.addEventListener('touchstart', onStart, { passive: false });
+    canvas.addEventListener('touchmove', onMove, { passive: false });
+    canvas.addEventListener('touchend', onEnd);
+  }, []);
+
+  useEffect(() => { if (canvasRef.current) setupCanvas(canvasRef.current); }, [setupCanvas, section, selectedTpl]);
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (canvas) { canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); }
+    setSignatureData(null);
+  };
+
+  // Auto-fill from transport
+  useEffect(() => {
+    if (!selectedTransport) { setFieldValues({}); return; }
+    const t = transports.find(t => t.id === selectedTransport);
+    if (!t) return;
+    const tpl = templates.find(tp => tp.id === selectedTpl);
+    if (!tpl) return;
+    const vals = {};
+    for (const field of tpl.fields) {
+      if (field === 'signature' || field === 'date_signed') continue;
+      const key = TRANSPORT_FIELD_MAP[field];
+      vals[field] = key ? (t[key] || '') : '';
+    }
+    vals['date_signed'] = new Date().toLocaleDateString();
+    setFieldValues(vals);
+  }, [selectedTransport, selectedTpl, transports, templates]);
+
+  const handlePrint = () => {
+    const tpl = templates.find(tp => tp.id === selectedTpl);
+    if (!tpl) return;
+    const printDiv = document.createElement('div');
+    printDiv.id = 'fcr-print-doc';
+    printDiv.innerHTML = `
+      <style>
+        @media print { body > *:not(#fcr-print-doc) { display: none !important; } #fcr-print-doc { display: block !important; } }
+        #fcr-print-doc { font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 40px; }
+        #fcr-print-doc h1 { font-size: 22px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 24px; }
+        #fcr-print-doc .field-row { margin-bottom: 16px; }
+        #fcr-print-doc .field-label { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #555; margin-bottom: 4px; }
+        #fcr-print-doc .field-value { font-size: 14px; border-bottom: 1px solid #ccc; padding: 4px 0; min-height: 24px; }
+        #fcr-print-doc .sig-img { border: 1px solid #999; border-radius: 4px; }
+      </style>
+      <h1>${tpl.name}</h1>
+      ${tpl.fields.map(f => {
+        if (f === 'signature') return `<div class="field-row"><div class="field-label">Signature</div>${signatureData ? `<img src="${signatureData}" class="sig-img" style="height:80px;" />` : '<div class="field-value"></div>'}</div>`;
+        const label = f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        return `<div class="field-row"><div class="field-label">${label}</div><div class="field-value">${fieldValues[f] || ''}</div></div>`;
+      }).join('')}
+    `;
+    document.body.appendChild(printDiv);
+    window.print();
+    setTimeout(() => document.body.removeChild(printDiv), 500);
+  };
+
+  const currentTpl = templates.find(tp => tp.id === selectedTpl);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <FileText className="w-5 h-5 text-gray-500" />
+        <h2 className="text-lg font-semibold">Documents</h2>
+      </div>
+
+      <div className="flex gap-2 border-b border-gray-200">
+        <button onClick={() => setSection('templates')}
+          className={`py-2 px-4 text-sm font-medium border-b-2 -mb-px ${section === 'templates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          📋 Templates
+        </button>
+        <button onClick={() => setSection('fill')}
+          className={`py-2 px-4 text-sm font-medium border-b-2 -mb-px ${section === 'fill' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          ✍️ Fill a Document
+        </button>
+      </div>
+
+      {/* ── Templates Section ─────────────────────────────────────────── */}
+      {section === 'templates' && (
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <label className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium cursor-pointer">
+              <Upload className="w-4 h-4" /> Upload Template
+              <input type="file" accept=".pdf,image/*" className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = ev => {
+                    const newTpl = {
+                      id: 'tpl-' + Date.now(),
+                      name: file.name.replace(/\.[^.]+$/, ''),
+                      base64: ev.target.result,
+                      fields: ['decedent_name', 'signature', 'date_signed'],
+                    };
+                    const updated = [...templates, newTpl];
+                    setTemplates(updated);
+                    saveTemplates(updated);
+                  };
+                  reader.readAsDataURL(file);
+                  e.target.value = '';
+                }} />
+            </label>
+          </div>
+          <div className="space-y-2">
+            {templates.map(tpl => (
+              <div key={tpl.id} className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-gray-900">{tpl.name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{tpl.fields.length} fields: {tpl.fields.slice(0, 4).join(', ')}{tpl.fields.length > 4 ? '...' : ''}</p>
+                </div>
+                <button
+                  onClick={() => { setSelectedTpl(tpl.id); setSection('fill'); setFieldValues({}); setSignatureData(null); }}
+                  className="text-sm bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-600 px-3 py-1.5 rounded-lg font-medium"
+                >
+                  Fill →
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Fill Section ──────────────────────────────────────────────── */}
+      {section === 'fill' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Template</label>
+              <select value={selectedTpl} onChange={e => { setSelectedTpl(e.target.value); setFieldValues({}); setSignatureData(null); }}
+                className="w-full p-2 border border-gray-300 rounded text-sm">
+                <option value="">— Select template —</option>
+                {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Auto-fill from Transport</label>
+              <select value={selectedTransport} onChange={e => setSelectedTransport(e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded text-sm">
+                <option value="">— Select transport —</option>
+                {transports.filter(t => t.status !== 'Completed').map(t => (
+                  <option key={t.id} value={t.id}>{t.decedentName || t.id} — {t.status}</option>
+                ))}
+                {transports.filter(t => t.status === 'Completed').slice(0, 10).map(t => (
+                  <option key={t.id} value={t.id}>{t.decedentName || t.id} (Completed)</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {currentTpl && (
+            <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
+              <h3 className="font-semibold text-gray-800">{currentTpl.name}</h3>
+              {currentTpl.fields.map(field => {
+                if (field === 'signature') return (
+                  <div key="signature">
+                    <label className="block text-sm font-medium text-gray-600 mb-1">Signature</label>
+                    <canvas
+                      ref={canvasRef}
+                      width={400} height={150}
+                      className="border-2 border-gray-300 rounded-lg bg-white w-full touch-none"
+                      style={{ maxWidth: '100%', cursor: 'crosshair' }}
+                    />
+                    <div className="flex gap-2 mt-1">
+                      <button onClick={clearSignature} className="text-xs text-gray-500 hover:text-red-600 px-2 py-1 border border-gray-200 rounded">
+                        Clear
+                      </button>
+                      {signatureData && <span className="text-xs text-green-600 py-1">✓ Signature saved</span>}
+                    </div>
+                  </div>
+                );
+                const label = field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                return (
+                  <div key={field}>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
+                    <input
+                      type="text"
+                      value={fieldValues[field] || ''}
+                      onChange={e => setFieldValues(prev => ({ ...prev, [field]: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm"
+                      placeholder={label}
+                    />
+                  </div>
+                );
+              })}
+              <button
+                onClick={handlePrint}
+                className="w-full bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-800 flex items-center justify-center gap-2 mt-2"
+              >
+                🖨️ Download / Print PDF
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Admin Users View ─────────────────────────────────────────────────────────
+
+const AdminUsersView = ({ adminUsersData, adminUsersLoading, adminUsersSearch, setAdminUsersSearch, onLoadUsers }) => {
+  useEffect(() => { if (!adminUsersData) onLoadUsers(); }, []);
+
+  if (adminUsersLoading) return <div className="text-center py-8 text-gray-500"><Loader className="w-6 h-6 animate-spin mx-auto mb-2" />Loading users...</div>;
+  if (!adminUsersData) return <div className="text-center py-8 text-gray-400">No data</div>;
+
+  const { staff, byHome } = adminUsersData;
+  const q = adminUsersSearch.toLowerCase();
+
+  const matchUser = u => !q || u.username?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.funeral_home_name?.toLowerCase().includes(q);
+
+  const RoleBadge = ({ role }) => (
+    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+      role === 'admin' ? 'bg-red-100 text-red-700' :
+      role === 'employee' ? 'bg-blue-100 text-blue-700' :
+      'bg-green-100 text-green-700'
+    }`}>{role}</span>
+  );
+
+  const UserRow = ({ u }) => (
+    <div className="flex items-center gap-3 text-sm py-2 border-b border-gray-50 last:border-0">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-gray-900">{u.username}</span>
+          <RoleBadge role={u.role} />
+          {u.email_verified === 0 && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Unverified</span>}
+        </div>
+        <div className="text-xs text-gray-500 mt-0.5">{u.email || '—'} · Joined {u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</div>
+      </div>
+    </div>
+  );
+
+  const filteredStaff = staff.filter(matchUser);
+  const filteredHomes = Object.entries(byHome).map(([key, data]) => ({
+    key, ...data, users: data.users.filter(matchUser)
+  })).filter(h => h.users.length > 0 || !q);
+
+  return (
+    <div className="space-y-4">
+      <div className="relative">
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          type="text"
+          value={adminUsersSearch}
+          onChange={e => setAdminUsersSearch(e.target.value)}
+          placeholder="Search users or funeral homes..."
+          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
+        />
+      </div>
+
+      {/* Staff section */}
+      {filteredStaff.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="w-4 h-4 text-gray-500" />
+            <h3 className="font-semibold text-gray-800">Staff</h3>
+            <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{filteredStaff.length}</span>
+          </div>
+          {filteredStaff.map(u => <UserRow key={u.id} u={u} />)}
+        </div>
+      )}
+
+      {/* By funeral home */}
+      {filteredHomes.filter(h => h.key !== '__unassigned__').map(home => (
+        <div key={home.key} className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Building2 className="w-4 h-4 text-gray-400" />
+            <div className="flex-1 min-w-0">
+              <span className="font-semibold text-gray-800">{home.name}</span>
+              {(home.city || home.state) && <span className="text-xs text-gray-400 ml-2">{[home.city, home.state].filter(Boolean).join(', ')}</span>}
+            </div>
+            <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">{home.users.length} users</span>
+          </div>
+          {home.users.map(u => <UserRow key={u.id} u={u} />)}
+        </div>
+      ))}
+
+      {/* Unassigned */}
+      {filteredHomes.filter(h => h.key === '__unassigned__').map(home => home.users.length > 0 && (
+        <div key="unassigned" className="bg-amber-50 rounded-lg border border-amber-200 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertCircle className="w-4 h-4 text-amber-500" />
+            <h3 className="font-semibold text-amber-800">Unassigned (no funeral home matched)</h3>
+            <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{home.users.length}</span>
+          </div>
+          {home.users.map(u => <UserRow key={u.id} u={u} />)}
+        </div>
+      ))}
+
+      <div className="text-right">
+        <button onClick={onLoadUsers} className="text-xs text-gray-400 hover:text-gray-600">↻ Refresh</button>
+      </div>
+    </div>
+  );
+};
+
 // ─── Helper components ────────────────────────────────────────────────────────
 
 const TabBtn = ({ active, onClick, children }) => (
@@ -2445,7 +3262,7 @@ const FormField = ({ label, children, confidence }) => (
 );
 
 // Transport card for funeral home "My Transports" view
-const TransportCard = ({ transport, onSaveNotes }) => {
+const TransportCard = ({ transport, onSaveNotes, onCopyCase, copiedId }) => {
   const [notesInput, setNotesInput] = useState(transport.notes || '');
   const [editingNotes, setEditingNotes] = useState(false);
 
@@ -2453,9 +3270,29 @@ const TransportCard = ({ transport, onSaveNotes }) => {
     <div className="bg-white rounded-lg shadow-md p-4">
       <div className="flex justify-between items-start mb-3">
         <div>
-          <span className="text-sm font-mono text-gray-500">#{transport.id}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-mono text-gray-500">#{transport.id}</span>
+            {transport.caseNumber && (
+              <button
+                onClick={() => onCopyCase?.(transport.caseNumber, transport.id)}
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-600 transition-colors"
+                title="Copy case number"
+              >
+                {copiedId === transport.id ? (
+                  <span className="text-green-600 font-medium">Copied!</span>
+                ) : (
+                  <>📋 {transport.caseNumber}</>
+                )}
+              </button>
+            )}
+          </div>
           <h3 className="font-semibold text-gray-900">{transport.decedentName}</h3>
           <p className="text-sm text-gray-600">{transport.funeralHomeName}</p>
+          {transport.scheduledPickupAt && (
+            <p className="text-xs text-indigo-600 mt-0.5 flex items-center gap-1">
+              ⏰ Scheduled: {new Date(transport.scheduledPickupAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+            </p>
+          )}
         </div>
         <div className="text-right">
           <StatusBadge status={transport.status} />

@@ -4,7 +4,8 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { getDb } = require('../database');
 const { JWT_SECRET, authenticateToken } = require('../middleware/auth');
-const { sendVerificationEmail } = require('../lib/sendEmail');
+// sendVerificationEmail kept for reference but email gate is disabled — instant access
+// const { sendVerificationEmail } = require('../lib/sendEmail');
 
 const router = express.Router();
 
@@ -23,13 +24,7 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
 
-  // Require email verification for non-admin users
-  if (user.role !== 'admin' && user.email_verified === 0) {
-    return res.status(403).json({
-      error: 'Please verify your email before logging in. Check your inbox.',
-    });
-  }
-
+  // Email verification gate removed — instant access
   const token = jwt.sign(
     { id: user.id, username: user.username, role: user.role },
     JWT_SECRET,
@@ -72,27 +67,16 @@ router.post('/register', async (req, res) => {
   }
 
   const passwordHash = bcrypt.hashSync(password, 10);
-  const verificationToken = crypto.randomBytes(32).toString('hex');
-  const verificationSentAt = new Date().toISOString();
 
-  const result = db.prepare(
-    `INSERT INTO users (username, password_hash, role, email, funeral_home_name, email_verified, verification_token, verification_sent_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?)`
-  ).run(username, passwordHash, role, email || null, funeralHomeName || null, verificationToken, verificationSentAt);
-
-  // Send verification email (non-blocking — don't fail registration if email fails)
-  if (email) {
-    try {
-      await sendVerificationEmail(email, username, verificationToken);
-    } catch (err) {
-      console.error('[register] Verification email failed to send:', err.message);
-      // Registration still succeeds; user will need to request a new verification
-    }
-  }
+  // email_verified = 1 immediately — email gate removed for instant access
+  db.prepare(
+    `INSERT INTO users (username, password_hash, role, email, funeral_home_name, email_verified)
+     VALUES (?, ?, ?, ?, ?, 1)`
+  ).run(username, passwordHash, role, email || null, funeralHomeName || null);
 
   res.status(201).json({
     success: true,
-    message: 'Account created. Check your email to verify your account before logging in.',
+    message: 'Account created! You can now log in.',
   });
 });
 
@@ -200,5 +184,42 @@ function verificationPage(title, message, success) {
 </body>
 </html>`;
 }
+
+// GET /api/auth/admin/users-by-funeral-home — Admin only
+const { requireRole } = require('../middleware/auth');
+router.get('/admin/users-by-funeral-home', authenticateToken, requireRole('admin'), (req, res) => {
+  const db = getDb();
+  const users = db.prepare(`
+    SELECT u.id, u.username, u.email, u.role, u.funeral_home_name,
+           u.email_verified, u.created_at,
+           fh.id as fh_id, fh.name as fh_name, fh.city as fh_city, fh.state as fh_state
+    FROM users u
+    LEFT JOIN funeral_homes fh ON fh.name = u.funeral_home_name AND fh.deleted_at IS NULL
+    ORDER BY u.role, u.funeral_home_name, u.created_at
+  `).all();
+
+  // Mask email: j***@domain.com
+  function maskEmail(email) {
+    if (!email) return null;
+    const [local, domain] = email.split('@');
+    if (!domain) return email;
+    return local[0] + '***@' + domain;
+  }
+
+  const staff = [];
+  const byHome = {};
+  for (const u of users) {
+    const masked = { ...u, email: maskEmail(u.email) };
+    if (u.role === 'admin' || u.role === 'employee') {
+      staff.push(masked);
+    } else {
+      const key = u.funeral_home_name || '__unassigned__';
+      if (!byHome[key]) byHome[key] = { name: u.fh_name || u.funeral_home_name || 'Unknown', city: u.fh_city, state: u.fh_state, users: [] };
+      byHome[key].users.push(masked);
+    }
+  }
+
+  res.json({ staff, byHome });
+});
 
 module.exports = router;

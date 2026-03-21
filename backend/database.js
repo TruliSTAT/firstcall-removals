@@ -198,6 +198,45 @@ function migrateDb(db) {
   try { db.exec('ALTER TABLE vehicles ADD COLUMN type TEXT'); } catch (_) {}
   try { db.exec('ALTER TABLE vehicles ADD COLUMN notes TEXT'); } catch (_) {}
 
+  // Add scheduled_pickup_at to transports if missing
+  try { db.exec('ALTER TABLE transports ADD COLUMN scheduled_pickup_at TEXT'); } catch (_) {}
+
+  // Invoices table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transport_id TEXT NOT NULL,
+      funeral_home_name TEXT,
+      funeral_home_email TEXT,
+      decedent_name TEXT,
+      pickup_fee REAL DEFAULT 0,
+      mileage_fee REAL DEFAULT 0,
+      ob_fee REAL DEFAULT 0,
+      admin_fee REAL DEFAULT 10,
+      total_cost REAL DEFAULT 0,
+      actual_miles INTEGER DEFAULT 0,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_at TEXT DEFAULT (datetime('now')),
+      approved_at TEXT,
+      sent_at TEXT,
+      approved_by TEXT
+    );
+  `);
+
+  // Transport messages table (per-transport chat)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS transport_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transport_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      username TEXT NOT NULL,
+      role TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   seedFuneralHomes(db);
 }
 
@@ -306,6 +345,7 @@ function rowToTransport(row) {
     createdAt: row.created_at,
     createdByUserId: row.created_by_user_id,
     funeralHomeId: row.funeral_home_id || null,
+    scheduledPickupAt: row.scheduled_pickup_at || null,
   };
 }
 

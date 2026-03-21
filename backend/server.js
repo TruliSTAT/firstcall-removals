@@ -38,6 +38,7 @@ app.use('/api/drivers', require('./routes/drivers'));
 app.use('/api/vehicles', require('./routes/vehicles'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/funeral-homes', require('./routes/funeral-homes'));
+app.use('/api/invoices', require('./routes/invoices'));
 
 // Health check
 app.get('/api/health', (req, res) => {
