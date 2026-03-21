@@ -146,6 +146,11 @@ router.post('/logout', authenticateToken, (req, res) => {
 router.get('/me', authenticateToken, (req, res) => {
   const db = getDb();
   const user = db.prepare('SELECT id, username, role, email, phone, funeral_home_name FROM users WHERE id = ?').get(req.user.id);
+  // For employee role, attach their driver record ID so frontend can check assignment
+  if (user && user.role === 'employee') {
+    const driver = db.prepare('SELECT id FROM drivers WHERE LOWER(name) = LOWER(?) LIMIT 1').get(user.username);
+    if (driver) user.driverId = driver.id;
+  }
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({ user });
 });

@@ -341,15 +341,23 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
         </div>
       )}
 
-      {(userRole === 'employee' || userRole === 'admin') && transport.status !== 'Completed' && (
-        <AdvanceStatusButton
-          transport={transport}
-          onAdvance={onAdvance}
-          loading={loading}
-          etaValue={etaValues[transport.id]}
-          onEtaChange={(v) => setEtaValue(transport.id, v)}
-        />
-      )}
+      {(() => {
+        const isAdmin = userRole === 'admin';
+        const isAssignedDriver = userRole === 'employee' &&
+          transport.assignedDriverId &&
+          String(transport.assignedDriverId) === String(currentUser?.driverId || currentUser?.id);
+        const canAdvance = (isAdmin || isAssignedDriver) && transport.status !== 'Completed';
+        if (!canAdvance) return null;
+        return (
+          <AdvanceStatusButton
+            transport={transport}
+            onAdvance={onAdvance}
+            loading={loading}
+            etaValue={etaValues[transport.id]}
+            onEtaChange={(v) => setEtaValue(transport.id, v)}
+          />
+        );
+      })()}
 
       {/* Per-transport chat */}
       <TransportChat transportId={transport.id} currentUser={currentUser} />
