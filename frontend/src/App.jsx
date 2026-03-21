@@ -284,6 +284,12 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
         {transport.notes && (
           <div className="text-gray-500 italic truncate">Note: {transport.notes}</div>
         )}
+        {(transport.odometerStart || transport.odometerEnd) && (
+          <div className="text-gray-400 text-xs">
+            🔢 {transport.odometerStart ? transport.odometerStart.toLocaleString() : '?'} mi
+            {transport.odometerEnd ? ` → ${transport.odometerEnd.toLocaleString()} mi` : ''}
+          </div>
+        )}
       </div>
 
       {/* Admin: inline driver/vehicle assignment */}
@@ -938,6 +944,255 @@ const FleetTab = ({ drivers, vehicles, onRefresh, adminUsersData, adminUsersLoad
         />
       )}
 
+      {/* ── Maintenance Section ─────────────────────────────────────────── */}
+      {fleetSection === 'maintenance' && (() => {
+        const filteredRecords = selectedVehicleId
+          ? maintenanceRecords.filter(r => r.vehicle_id === selectedVehicleId)
+          : maintenanceRecords;
+
+        // Summary stats for selected vehicle
+        const now = new Date();
+        const thisYear = now.getFullYear();
+        const oilChanges = filteredRecords.filter(r => r.type === 'Oil Change').sort((a, b) => new Date(b.performed_at) - new Date(a.performed_at));
+        const inspections = filteredRecords.filter(r => r.type === 'State Inspection').sort((a, b) => new Date(b.performed_at) - new Date(a.performed_at));
+        const yearCost = filteredRecords
+          .filter(r => new Date(r.performed_at).getFullYear() === thisYear)
+          .reduce((sum, r) => sum + (parseFloat(r.cost) || 0), 0);
+
+        const getDueAlert = (record) => {
+          if (!record) return null;
+          if (record.next_due_date) {
+            const due = new Date(record.next_due_date);
+            const diff = (due - now) / (1000 * 60 * 60 * 24);
+            if (diff < 0) return 'red';
+            if (diff <= 30) return 'amber';
+          }
+          return null;
+        };
+
+        return (
+          <div className="space-y-4">
+            {maintenanceError && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{maintenanceError}</div>}
+
+            {/* Controls row */}
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedVehicleId}
+                onChange={e => setSelectedVehicleId(e.target.value)}
+                className="p-2 border border-gray-300 rounded text-sm flex-1 min-w-0"
+              >
+                <option value="">All Vehicles</option>
+                {vehicles.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+              <button
+                onClick={() => { setShowMaintenanceForm(true); setMaintenanceForm({ ...EMPTY_MAINTENANCE_FORM, performed_at: new Date().toISOString().split('T')[0] }); if (selectedVehicleId) setSelectedVehicleId(selectedVehicleId); }}
+                className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 font-medium flex-shrink-0"
+              >
+                <Plus className="w-4 h-4" /> Log Service
+              </button>
+            </div>
+
+            {/* Summary Cards */}
+            {selectedVehicleId && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white rounded-lg border border-gray-200 p-3 text-sm">
+                  <div className="text-xs text-gray-500 mb-1 font-medium">Last Oil Change</div>
+                  {oilChanges[0] ? (
+                    <>
+                      <div className="font-semibold text-gray-800">{new Date(oilChanges[0].performed_at).toLocaleDateString()}</div>
+                      {oilChanges[0].mileage_at_service && <div className="text-xs text-gray-500">at {oilChanges[0].mileage_at_service.toLocaleString()} mi</div>}
+                      {oilChanges[0].next_due_mileage && (
+                        <div className={`text-xs mt-1 font-medium ${getDueAlert(oilChanges[0]) === 'red' ? 'text-red-600' : getDueAlert(oilChanges[0]) === 'amber' ? 'text-amber-600' : 'text-gray-500'}`}>
+                          Next due: {oilChanges[0].next_due_mileage.toLocaleString()} mi
+                          {oilChanges[0].next_due_date && ` or ${new Date(oilChanges[0].next_due_date).toLocaleDateString()}`}
+                        </div>
+                      )}
+                    </>
+                  ) : <div className="text-gray-400 text-xs">No record</div>}
+                </div>
+                <div className="bg-white rounded-lg border border-gray-200 p-3 text-sm">
+                  <div className="text-xs text-gray-500 mb-1 font-medium">Last Inspection</div>
+                  {inspections[0] ? (
+                    <>
+                      <div className="font-semibold text-gray-800">{new Date(inspections[0].performed_at).toLocaleDateString()}</div>
+                      <div className={`text-xs mt-1 font-medium ${getDueAlert(inspections[0]) === 'red' ? 'text-red-600' : getDueAlert(inspections[0]) === 'amber' ? 'text-amber-600' : 'text-gray-500'}`}>
+                        {inspections[0].next_due_date ? `Next due: ${new Date(inspections[0].next_due_date).toLocaleDateString()}` : ''}
+                      </div>
+                    </>
+                  ) : <div className="text-gray-400 text-xs">No record</div>}
+                </div>
+                <div className="col-span-2 bg-white rounded-lg border border-gray-200 p-3 text-sm">
+                  <div className="text-xs text-gray-500 mb-1 font-medium">Total Maintenance Cost — {thisYear}</div>
+                  <div className="text-lg font-bold text-gray-800">${yearCost.toFixed(2)}</div>
+                </div>
+              </div>
+            )}
+
+            {/* Log Service Form */}
+            {showMaintenanceForm && (
+              <div className="bg-white rounded-lg shadow-md p-4 border border-blue-100 space-y-3">
+                <h3 className="font-semibold text-gray-800">Log Service Record</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Vehicle *</label>
+                    <select
+                      value={selectedVehicleId}
+                      onChange={e => setSelectedVehicleId(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-sm"
+                    >
+                      <option value="">Select vehicle</option>
+                      {vehicles.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Service Type *</label>
+                    <select value={maintenanceForm.type} onChange={e => setMaintenanceForm(p => ({ ...p, type: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm">
+                      {MAINTENANCE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                    <input type="text" value={maintenanceForm.description} onChange={e => setMaintenanceForm(p => ({ ...p, description: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Brief description" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Cost ($)</label>
+                    <input type="number" step="0.01" value={maintenanceForm.cost} onChange={e => setMaintenanceForm(p => ({ ...p, cost: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="0.00" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Mileage at Service</label>
+                    <input type="number" value={maintenanceForm.mileage_at_service} onChange={e => setMaintenanceForm(p => ({ ...p, mileage_at_service: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="e.g. 45000" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Next Due Mileage</label>
+                    <input type="number" value={maintenanceForm.next_due_mileage} onChange={e => setMaintenanceForm(p => ({ ...p, next_due_mileage: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Optional" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Next Due Date</label>
+                    <input type="date" value={maintenanceForm.next_due_date} onChange={e => setMaintenanceForm(p => ({ ...p, next_due_date: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Performed By</label>
+                    <input type="text" value={maintenanceForm.performed_by} onChange={e => setMaintenanceForm(p => ({ ...p, performed_by: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Shop or name" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Date Performed</label>
+                    <input type="date" value={maintenanceForm.performed_at} onChange={e => setMaintenanceForm(p => ({ ...p, performed_at: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                    <textarea value={maintenanceForm.notes} onChange={e => setMaintenanceForm(p => ({ ...p, notes: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm" rows={2} placeholder="Additional notes" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { setShowMaintenanceForm(false); setMaintenanceError(''); }}
+                    className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+                  <button onClick={handleSaveMaintenance} disabled={maintenanceLoading}
+                    className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                    {maintenanceLoading ? 'Saving...' : 'Save Record'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Delete confirmation */}
+            {maintenanceDeleteId && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-sm text-red-800 font-medium mb-3">Delete this maintenance record? This cannot be undone.</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setMaintenanceDeleteId(null)}
+                    className="flex-1 py-1.5 border border-gray-300 text-gray-700 rounded text-sm hover:bg-gray-50">Cancel</button>
+                  <button
+                    onClick={() => {
+                      const rec = maintenanceRecords.find(r => r.id === maintenanceDeleteId);
+                      if (rec) handleDeleteMaintenance(rec.vehicle_id, rec.id);
+                    }}
+                    disabled={maintenanceLoading}
+                    className="flex-1 py-1.5 bg-red-600 text-white rounded text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+                    {maintenanceLoading ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Maintenance log table */}
+            {maintenanceLoading && !maintenanceRecords.length ? (
+              <div className="text-center py-8 text-gray-400 text-sm">Loading...</div>
+            ) : filteredRecords.length === 0 ? (
+              <div className="text-center py-10">
+                <Wrench className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500 text-sm">No maintenance records yet. Log your first service above.</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="text-left p-3 font-medium text-gray-600">Date</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Vehicle</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Service</th>
+                      <th className="text-left p-3 font-medium text-gray-600 hidden md:table-cell">Description</th>
+                      <th className="text-left p-3 font-medium text-gray-600 hidden sm:table-cell">Mileage</th>
+                      <th className="text-left p-3 font-medium text-gray-600">Cost</th>
+                      <th className="text-left p-3 font-medium text-gray-600 hidden lg:table-cell">Next Due</th>
+                      <th className="text-left p-3 font-medium text-gray-600 hidden md:table-cell">By</th>
+                      <th className="p-3 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredRecords.map(r => {
+                      const dueDateAlert = (() => {
+                        if (!r.next_due_date) return null;
+                        const due = new Date(r.next_due_date);
+                        const diff = (due - now) / (1000 * 60 * 60 * 24);
+                        if (diff < 0) return 'red';
+                        if (diff <= 30) return 'amber';
+                        return null;
+                      })();
+                      return (
+                        <tr key={r.id} className="hover:bg-gray-50">
+                          <td className="p-3 text-gray-700 whitespace-nowrap">{new Date(r.performed_at).toLocaleDateString()}</td>
+                          <td className="p-3 text-gray-700">{r.vehicle_name}</td>
+                          <td className="p-3 font-medium text-gray-900">{r.type}</td>
+                          <td className="p-3 text-gray-500 hidden md:table-cell">{r.description || '—'}</td>
+                          <td className="p-3 text-gray-500 hidden sm:table-cell">{r.mileage_at_service ? r.mileage_at_service.toLocaleString() + ' mi' : '—'}</td>
+                          <td className="p-3 text-gray-700">{r.cost ? `$${parseFloat(r.cost).toFixed(2)}` : '—'}</td>
+                          <td className="p-3 hidden lg:table-cell">
+                            {r.next_due_date ? (
+                              <span className={`text-xs font-medium ${dueDateAlert === 'red' ? 'text-red-600' : dueDateAlert === 'amber' ? 'text-amber-600' : 'text-gray-500'}`}>
+                                {dueDateAlert === 'red' ? '🔴 ' : dueDateAlert === 'amber' ? '🟡 ' : ''}
+                                {new Date(r.next_due_date).toLocaleDateString()}
+                              </span>
+                            ) : r.next_due_mileage ? (
+                              <span className="text-xs text-gray-500">{r.next_due_mileage.toLocaleString()} mi</span>
+                            ) : '—'}
+                          </td>
+                          <td className="p-3 text-gray-500 hidden md:table-cell">{r.performed_by || '—'}</td>
+                          <td className="p-3">
+                            <button onClick={() => setMaintenanceDeleteId(r.id)}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* ── Vehicles Section ─────────────────────────────────────────────── */}
       {fleetSection === 'vehicles' && (
         <div className="space-y-3">
@@ -1506,6 +1761,23 @@ const FuneralTransportApp = () => {
     setEtaValues(prev => ({ ...prev, [transportId]: value }));
   };
 
+  // Odometer modal state
+  const [odometerModal, setOdometerModal] = useState(null); // { transportId, newStatus, eta, type: 'start'|'end', odometerStart }
+  const [odometerInput, setOdometerInput] = useState('');
+  const [odometerLoading, setOdometerLoading] = useState(false);
+
+  // Toast state
+  const [toastMessage, setToastMessage] = useState('');
+  const showToast = (msg, durationMs = 3500) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), durationMs);
+  };
+
+  // Auto mileage estimation state
+  const [milesEstimating, setMilesEstimating] = useState(false);
+  const [milesEstimateLabel, setMilesEstimateLabel] = useState('');
+  const milesDebounceRef = useRef(null);
+
   // ── Data fetch ───────────────────────────────────────────────────────────
 
   const fetchData = useCallback(async () => {
@@ -1638,9 +1910,56 @@ const FuneralTransportApp = () => {
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      const next = { ...prev, [field]: value };
+      // Auto-estimate miles when both pickup and destination have content (debounced)
+      if (field === 'pickupLocation' || field === 'destination') {
+        const pickup = field === 'pickupLocation' ? value : next.pickupLocation;
+        const dest = field === 'destination' ? value : next.destination;
+        if (pickup && dest && pickup.length >= 10 && dest.length >= 10) {
+          if (milesDebounceRef.current) clearTimeout(milesDebounceRef.current);
+          milesDebounceRef.current = setTimeout(() => autoEstimateMiles(pickup, dest), 2000);
+        }
+      }
+      return next;
+    });
     if (aiFilledFields[field]) {
       setAiFilledFields(prev => { const n = { ...prev }; delete n[field]; return n; });
+    }
+  };
+
+  const autoEstimateMiles = async (pickup, dest) => {
+    setMilesEstimating(true);
+    setMilesEstimateLabel('');
+    try {
+      // Geocode pickup
+      const geocode = async (addr) => {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1`;
+        const res = await fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': 'FCR-Transport-App/1.0' } });
+        const data = await res.json();
+        if (!data.length) return null;
+        return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+      };
+      const [p1, p2] = await Promise.all([geocode(pickup), geocode(dest)]);
+      if (!p1 || !p2) {
+        setMilesEstimateLabel('Could not estimate — enter manually');
+        return;
+      }
+      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${p1.lon},${p1.lat};${p2.lon},${p2.lat}?overview=false`;
+      const res = await fetch(osrmUrl);
+      const data = await res.json();
+      if (data.code !== 'Ok' || !data.routes.length) {
+        setMilesEstimateLabel('Could not estimate — enter manually');
+        return;
+      }
+      const meters = data.routes[0].distance;
+      const miles = Math.round(meters / 1609.34);
+      setFormData(prev => ({ ...prev, estimatedMiles: String(miles) }));
+      setMilesEstimateLabel(`~${miles} miles (estimated)`);
+    } catch (_) {
+      setMilesEstimateLabel('Could not estimate — enter manually');
+    } finally {
+      setMilesEstimating(false);
     }
   };
 
@@ -1887,14 +2206,60 @@ const FuneralTransportApp = () => {
   };
 
   const advanceTransportStatus = async (transportId, newStatus, eta = null) => {
+    // Show odometer modal for start (Pending→Accepted) and end (Loaded→Completed)
+    if (newStatus === 'Accepted') {
+      // Pre-fill with latest end reading for this driver
+      const transport = transports.find(t => t.id === transportId);
+      let prefillOdometer = '';
+      if (transport?.assignedDriverId) {
+        try {
+          const { odometer } = await apiRequest('GET', `/drivers/${transport.assignedDriverId}/latest-odometer`);
+          if (odometer) prefillOdometer = String(odometer);
+        } catch (_) {}
+      }
+      setOdometerInput(prefillOdometer);
+      setOdometerModal({ transportId, newStatus, eta, type: 'start', odometerStart: null });
+      return;
+    }
+    if (newStatus === 'Completed') {
+      const transport = transports.find(t => t.id === transportId);
+      setOdometerInput('');
+      setOdometerModal({ transportId, newStatus, eta, type: 'end', odometerStart: transport?.odometerStart || null });
+      return;
+    }
+    await doAdvanceTransportStatus(transportId, newStatus, eta);
+  };
+
+  const doAdvanceTransportStatus = async (transportId, newStatus, eta = null, odometerReading = null, odometerType = null) => {
     setLoading(true);
     try {
+      // Log odometer reading if provided
+      if (odometerReading && odometerType) {
+        const transport = transports.find(t => t.id === transportId);
+        await apiRequest('POST', `/transports/${transportId}/odometer`, {
+          reading_type: odometerType,
+          odometer: parseInt(odometerReading),
+          vehicle_id: transport?.assignedVehicleId || undefined,
+        });
+      }
+
       const body = { status: newStatus };
       if (eta) body.eta = eta;
       const { transport } = await apiRequest('PUT', `/transports/${transportId}`, body);
       setTransports(prev => prev.map(t => t.id === transportId ? transport : t));
       // Clear eta input for this transport
       setEtaValues(prev => { const n = { ...prev }; delete n[transportId]; return n; });
+
+      // End-of-day check when completing
+      if (newStatus === 'Completed' && transport.assignedDriverId) {
+        try {
+          const { count } = await apiRequest('GET', `/drivers/${transport.assignedDriverId}/active-count`);
+          if (count === 0) {
+            await apiRequest('POST', `/drivers/${transport.assignedDriverId}/end-of-day-check`, {});
+            showToast('📱 End-of-day notification sent to driver');
+          }
+        } catch (_) {}
+      }
     } catch (err) {
       setApiError(err.message);
     } finally {
@@ -2676,6 +3041,22 @@ const FuneralTransportApp = () => {
                           onChange={(e) => handleInputChange('estimatedMiles', e.target.value)}
                           className={`w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 ${aiFilledFields.estimatedMiles ? 'bg-blue-50 border-blue-300' : 'border-gray-300'}`}
                           placeholder="Total trip miles" />
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => autoEstimateMiles(formData.pickupLocation, formData.destination)}
+                            disabled={milesEstimating || !formData.pickupLocation || !formData.destination}
+                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded border border-blue-200 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {milesEstimating ? <Loader className="w-3 h-3 animate-spin" /> : '📍'}
+                            {milesEstimating ? 'Estimating...' : 'Estimate Miles'}
+                          </button>
+                          {milesEstimateLabel && (
+                            <span className={`text-xs font-medium ${milesEstimateLabel.startsWith('Could') ? 'text-gray-500' : 'text-green-600'}`}>
+                              {milesEstimateLabel}
+                            </span>
+                          )}
+                        </div>
                       </FormField>
                     </div>
                   </div>
@@ -6042,6 +6423,66 @@ const AdminUsersPanel = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Odometer Modal ─────────────────────────────────────────────── */}
+      {odometerModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-lg font-bold text-gray-900">
+              {odometerModal.type === 'start' ? '🚐 Starting Transport' : '✅ Complete Transport'}
+            </h2>
+            <p className="text-sm text-gray-600">
+              {odometerModal.type === 'start'
+                ? 'Please enter your current odometer reading before departing.'
+                : 'Please enter your odometer reading at delivery.'}
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {odometerModal.type === 'start' ? 'Current Odometer' : 'End Odometer'} (miles)
+              </label>
+              <input
+                type="number"
+                value={odometerInput}
+                onChange={e => setOdometerInput(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. 45230"
+                autoFocus
+              />
+              {odometerModal.type === 'end' && odometerModal.odometerStart && (
+                <p className="text-xs text-gray-500 mt-1">Started at: {odometerModal.odometerStart.toLocaleString()} mi</p>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setOdometerModal(null); setOdometerInput(''); }}
+                className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const reading = odometerInput ? parseInt(odometerInput) : null;
+                  const { transportId, newStatus, eta, type } = odometerModal;
+                  setOdometerModal(null);
+                  setOdometerInput('');
+                  await doAdvanceTransportStatus(transportId, newStatus, eta, reading, type);
+                }}
+                disabled={odometerLoading}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {odometerModal.type === 'start' ? 'Start Transport →' : 'Complete Transport ✓'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Toast ───────────────────────────────────────────────────────── */}
+      {toastMessage && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium animate-pulse">
+          {toastMessage}
         </div>
       )}
     </div>

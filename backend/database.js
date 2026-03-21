@@ -204,6 +204,45 @@ function migrateDb(db) {
   // Add scheduled_pickup_at to transports if missing
   try { db.exec('ALTER TABLE transports ADD COLUMN scheduled_pickup_at TEXT'); } catch (_) {}
 
+  // Add odometer columns to transports if missing
+  try { db.exec('ALTER TABLE transports ADD COLUMN odometer_start INTEGER'); } catch (_) {}
+  try { db.exec('ALTER TABLE transports ADD COLUMN odometer_end INTEGER'); } catch (_) {}
+
+  // Add end_of_day_sms_sent_at to drivers if missing
+  try { db.exec('ALTER TABLE drivers ADD COLUMN end_of_day_sms_sent_at TEXT'); } catch (_) {}
+
+  // Odometer readings table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS odometer_readings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      driver_id TEXT NOT NULL,
+      vehicle_id TEXT,
+      transport_id TEXT,
+      reading_type TEXT NOT NULL CHECK(reading_type IN ('start','end','day_end')),
+      odometer INTEGER NOT NULL,
+      recorded_at TEXT DEFAULT (datetime('now')),
+      notes TEXT
+    );
+  `);
+
+  // Vehicle maintenance table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vehicle_maintenance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vehicle_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      description TEXT,
+      cost REAL DEFAULT 0,
+      mileage_at_service INTEGER,
+      next_due_mileage INTEGER,
+      next_due_date TEXT,
+      performed_by TEXT,
+      notes TEXT,
+      performed_at TEXT DEFAULT (datetime('now')),
+      created_by TEXT
+    );
+  `);
+
   // Invoices table
   db.exec(`
     CREATE TABLE IF NOT EXISTS invoices (
@@ -405,6 +444,8 @@ function rowToTransport(row) {
     createdByUserId: row.created_by_user_id,
     funeralHomeId: row.funeral_home_id || null,
     scheduledPickupAt: row.scheduled_pickup_at || null,
+    odometerStart: row.odometer_start || null,
+    odometerEnd: row.odometer_end || null,
   };
 }
 

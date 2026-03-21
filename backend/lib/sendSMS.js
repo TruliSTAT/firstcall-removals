@@ -44,4 +44,30 @@ async function alertNewTransport(transport) {
   }
 }
 
-module.exports = { alertNewTransport };
+async function sendDriverSMS(phone, message) {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken  = process.env.TWILIO_AUTH_TOKEN;
+  if (!accountSid || !authToken) {
+    console.warn('[SMS] TWILIO credentials not set — skipping driver SMS');
+    return;
+  }
+  if (!phone) {
+    console.warn('[SMS] No phone number for driver — skipping');
+    return;
+  }
+
+  let twilio;
+  try {
+    twilio = require('twilio');
+  } catch (_) {
+    console.warn('[SMS] twilio package not installed — skipping driver SMS');
+    return;
+  }
+
+  const client = twilio(accountSid, authToken);
+  client.messages.create({ from: FROM_NUMBER, to: phone, body: message })
+    .then(msg => console.log(`[SMS] Driver SMS sent to ${phone}: ${msg.sid}`))
+    .catch(err => console.error(`[SMS] Driver SMS failed to ${phone}:`, err.message));
+}
+
+module.exports = { alertNewTransport, sendDriverSMS };

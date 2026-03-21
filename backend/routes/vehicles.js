@@ -87,4 +87,83 @@ router.delete('/:id', authenticateToken, requireRole('admin'), (req, res) => {
   res.json({ success: true });
 });
 
+// ─── Maintenance Routes ───────────────────────────────────────────────────────
+
+// GET /api/vehicles/maintenance/all — list all maintenance records across all vehicles
+router.get('/maintenance/all', authenticateToken, (req, res) => {
+  const db = getDb();
+  const records = db.prepare(`
+    SELECT m.*, v.name as vehicle_name
+    FROM vehicle_maintenance m
+    JOIN vehicles v ON m.vehicle_id = v.id
+    ORDER BY m.performed_at DESC
+  `).all();
+  res.json({ maintenance: records });
+});
+
+// GET /api/vehicles/:id/maintenance — list maintenance records for a vehicle
+router.get('/:id/maintenance', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const db = getDb();
+  const vehicle = db.prepare('SELECT id FROM vehicles WHERE id = ?').get(id);
+  if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
+
+  const records = db.prepare(`
+    SELECT m.*, v.name as vehicle_name
+    FROM vehicle_maintenance m
+    JOIN vehicles v ON m.vehicle_id = v.id
+    WHERE m.vehicle_id = ?
+    ORDER BY m.performed_at DESC
+  `).all(id);
+
+  res.json({ maintenance: records });
+});
+
+// POST /api/vehicles/:id/maintenance — add maintenance record (admin only)
+router.post('/:id/maintenance', authenticateToken, requireRole('admin'), (req, res) => {
+  const { id } = req.params;
+  const db = getDb();
+  const vehicle = db.prepare('SELECT id FROM vehicles WHERE id = ?').get(id);
+  if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
+
+  const {
+    type, description, cost, mileage_at_service, next_due_mileage,
+    next_due_date, performed_by, notes, performed_at
+  } = req.body;
+
+  if (!type) return res.status(400).json({ error: 'type is required' });
+
+  const result = db.prepare(`
+    INSERT INTO vehicle_maintenance
+      (vehicle_id, type, description, cost, mileage_at_service, next_due_mileage, next_due_date, performed_by, notes, performed_at, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, type, description || null, cost || 0,
+    mileage_at_service || null, next_due_mileage || null,
+    next_due_date || null, performed_by || null,
+    notes || null,
+    performed_at || new Date().toISOString().split('T')[0],
+    req.user.username
+  );
+
+  const record = db.prepare(`
+    SELECT m.*, v.name as vehicle_name
+    FROM vehicle_maintenance m
+    JOIN vehicles v ON m.vehicle_id = v.id
+    WHERE m.id = ?
+  `).get(result.lastInsertRowid);
+
+  res.status(201).json({ record });
+});
+
+// DELETE /api/vehicles/:id/maintenance/:recordId — delete record (admin only)
+router.delete('/:id/maintenance/:recordId', authenticateToken, requireRole('admin'), (req, res) => {
+  const { id, recordId } = req.params;
+  const db = getDb();
+  const record = db.prepare('SELECT id FROM vehicle_maintenance WHERE id = ? AND vehicle_id = ?').get(recordId, id);
+  if (!record) return res.status(404).json({ error: 'Maintenance record not found' });
+  db.prepare('DELETE FROM vehicle_maintenance WHERE id = ?').run(recordId);
+  res.json({ success: true });
+});
+
 module.exports = router;

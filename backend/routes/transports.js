@@ -522,6 +522,43 @@ router.put('/:id', authenticateToken, (req, res) => {
   res.json({ transport: rowToTransport(row) });
 });
 
+// POST /api/transports/:id/odometer — log an odometer reading
+router.post('/:id/odometer', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { reading_type, odometer, vehicle_id } = req.body;
+
+  if (!reading_type || odometer == null) {
+    return res.status(400).json({ error: 'reading_type and odometer are required' });
+  }
+  if (!['start', 'end', 'day_end'].includes(reading_type)) {
+    return res.status(400).json({ error: 'reading_type must be start, end, or day_end' });
+  }
+
+  const db = getDb();
+  const transport = db.prepare('SELECT * FROM transports WHERE id = ?').get(id);
+  if (!transport) return res.status(404).json({ error: 'Transport not found' });
+
+  // Save to odometer_readings
+  db.prepare(`
+    INSERT INTO odometer_readings (driver_id, vehicle_id, transport_id, reading_type, odometer)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    transport.assigned_driver_id || req.user.username,
+    vehicle_id || transport.assigned_vehicle_id || null,
+    id, reading_type, parseInt(odometer)
+  );
+
+  // Update transport odometer_start / odometer_end
+  if (reading_type === 'start') {
+    db.prepare('UPDATE transports SET odometer_start = ? WHERE id = ?').run(parseInt(odometer), id);
+  } else if (reading_type === 'end') {
+    db.prepare('UPDATE transports SET odometer_end = ? WHERE id = ?').run(parseInt(odometer), id);
+  }
+
+  const row = getTransportWithNames(db, id);
+  res.json({ transport: rowToTransport(row) });
+});
+
 // DELETE /api/transports/:id
 router.delete('/:id', authenticateToken, requireRole('admin'), (req, res) => {
   const { id } = req.params;
