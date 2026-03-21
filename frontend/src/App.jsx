@@ -3276,41 +3276,137 @@ const TransportChat = ({ transportId, currentUser }) => {
 
 // ─── Documents Panel ─────────────────────────────────────────────────────────
 
+const TEMPLATES_VERSION = 'v2';
+
+const STAT_MCS_TEMPLATE = {
+  id: 'stat-mcs-first-call',
+  name: 'STAT MCS First Call Intake',
+  description: 'Official first call intake — complete for every transport',
+  printHeader: 'STAT MCS — MEDICAL COURIER SERVICES | www.statmcs.com | (281) 940-6525 | ALL STAT MCS TECHS HAVE GOVERNMENT-ISSUED TWIC CARDS',
+  fields: [
+    { id:'control_number', label:'Control #', type:'text', autoFill:null },
+    { id:'client', label:'Client', type:'text', autoFill:'funeral_home_name' },
+    { id:'code', label:'Code', type:'text', autoFill:null },
+    { id:'date', label:'Date', type:'date', autoFill:'created_at' },
+    { id:'veteran', label:'Veteran?', type:'yn', autoFill:null },
+    { id:'family_present', label:'Family Present?', type:'yn', autoFill:null },
+    { id:'decomp', label:'DeComp?', type:'yn', autoFill:null },
+    { id:'organ_donor', label:'Organ Donor?', type:'yn', autoFill:null },
+    { id:'arrival_time', label:'Arrival Time', type:'time', autoFill:null },
+    { id:'location_type', label:'Type of Location', type:'select', options:['Residence','ALF','Nursing Home','Hospice','Hospital','ER','Morgue','Funeral Home','Med Exam/Lab','On Scene'], autoFill:'pickup_location_type' },
+    { id:'decedent_name', label:'Name of Deceased', type:'text', autoFill:'decedent_name' },
+    { id:'sex', label:'Sex', type:'select', options:['Male','Female'], autoFill:null },
+    { id:'location_address', label:'Location Address', type:'text', autoFill:'pickup_location' },
+    { id:'location_city', label:'City', type:'text', autoFill:null },
+    { id:'facility_name', label:'Facility Name', type:'text', autoFill:null },
+    { id:'remarks', label:'Remarks', type:'text', autoFill:null },
+    { id:'location_phone', label:'Location Phone #', type:'tel', autoFill:'pickup_phone' },
+    { id:'contact_primary', label:'Contact (Primary)', type:'text', autoFill:'pickup_contact' },
+    { id:'contact_secondary', label:'Contact (Secondary)', type:'text', autoFill:null },
+    { id:'stairs_obstacles', label:'Any Stairs/Obstacles?', type:'yn', autoFill:null },
+    { id:'stairs_details', label:'If Yes, What?', type:'text', autoFill:null },
+    { id:'dob', label:'Date of Birth', type:'date', autoFill:'date_of_birth' },
+    { id:'dod', label:'Date of Death', type:'date', autoFill:'date_of_death' },
+    { id:'age', label:'Age', type:'number', autoFill:null },
+    { id:'tod', label:'Time of Death', type:'time', autoFill:null },
+    { id:'weight', label:'Weight (lbs)', type:'number', autoFill:'weight' },
+    { id:'extra_tech', label:'Extra Tech?', type:'yn', autoFill:null },
+    { id:'after_hours', label:'After Hours?', type:'yn', autoFill:null },
+    { id:'body_bag', label:'Body Bag?', type:'yn', autoFill:null },
+    { id:'ice', label:'Ice?', type:'yn', autoFill:null },
+    { id:'airport_charges', label:'Airport Charges $', type:'currency', autoFill:null },
+    { id:'nok_name', label:'Name of NOK', type:'text', autoFill:null },
+    { id:'nok_phone', label:'NOK Phone #', type:'tel', autoFill:null },
+    { id:'nok_relationship', label:'Relationship', type:'text', autoFill:null },
+    { id:'nok_email', label:'NOK Email', type:'email', autoFill:null },
+    { id:'doctor_name', label:'Doctor Signing DC', type:'text', autoFill:null },
+    { id:'doctor_phone', label:'DR. Phone #', type:'tel', autoFill:null },
+    { id:'releasing_authority', label:'Releasing Authority', type:'text', autoFill:null },
+    { id:'id_anklet_applied_by', label:'ID Anklet Applied By', type:'text', autoFill:null },
+    { id:'no_personal_effects', label:'No Personal Effects (check if none)', type:'checkbox', autoFill:null },
+    { id:'effects_table', label:'Personal Effects Inventory', type:'effects_table', autoFill:null },
+    { id:'injury_blood', label:'Blood', type:'yn', autoFill:null },
+    { id:'injury_bruising', label:'Bruising', type:'yn', autoFill:null },
+    { id:'injury_burn', label:'Burn', type:'yn', autoFill:null },
+    { id:'injury_cuts', label:'Cuts', type:'yn', autoFill:null },
+    { id:'injury_discolored', label:'Discolored', type:'yn', autoFill:null },
+    { id:'injury_head', label:'Head Injury', type:'yn', autoFill:null },
+    { id:'injury_scar', label:'Recent Scar', type:'yn', autoFill:null },
+    { id:'injury_scrapes', label:'Scrapes', type:'yn', autoFill:null },
+    { id:'notes', label:'Notes', type:'textarea', autoFill:'notes' },
+    { id:'invoice_number', label:'Invoice #', type:'text', autoFill:'case_number' },
+    { id:'total', label:'Total $', type:'currency', autoFill:'total_cost' },
+    { id:'delivered_to', label:'Remains Delivered To', type:'text', autoFill:'destination_contact' },
+    { id:'delivery_address', label:'Delivery Address', type:'text', autoFill:'destination' },
+    { id:'delivery_city', label:'Delivery City', type:'text', autoFill:null },
+    { id:'technician_name', label:'STAT MCS Technician', type:'text', autoFill:null },
+    { id:'sign_date', label:'Sign Date', type:'date', autoFill:null },
+    { id:'leave_time', label:'Leave Time', type:'time', autoFill:null },
+    { id:'funeral_home_time', label:'Funeral Home Time', type:'time', autoFill:null },
+    { id:'loaded_miles', label:'Loaded Miles', type:'number', autoFill:'actual_miles' },
+    { id:'print_name', label:'Print Name (Witness)', type:'text', autoFill:null },
+    { id:'witness_signature', label:'Witness Signature', type:'signature', autoFill:null },
+  ],
+};
+
 const DEFAULT_TEMPLATES = [
-  {
-    id: 'tpl-1',
-    name: 'First Call Authorization',
-    fields: ['decedent_name', 'date_of_death', 'pickup_location', 'funeral_home_name', 'funeral_home_phone', 'authorized_by', 'signature', 'date_signed'],
-  },
+  STAT_MCS_TEMPLATE,
   {
     id: 'tpl-2',
     name: 'Transport Release Form',
-    fields: ['decedent_name', 'pickup_location', 'destination', 'driver_name', 'vehicle_id', 'notes', 'signature', 'date_signed'],
+    description: 'Release authorization for transport handoff',
+    fields: [
+      { id:'decedent_name', label:'Name of Deceased', type:'text', autoFill:'decedent_name' },
+      { id:'pickup_location', label:'Pickup Location', type:'text', autoFill:'pickup_location' },
+      { id:'destination', label:'Destination', type:'text', autoFill:'destination' },
+      { id:'driver_name', label:'Driver Name', type:'text', autoFill:'driver_name' },
+      { id:'vehicle_id', label:'Vehicle ID', type:'text', autoFill:'vehicle_id' },
+      { id:'notes', label:'Notes', type:'textarea', autoFill:'notes' },
+      { id:'signature', label:'Signature', type:'signature', autoFill:null },
+      { id:'date_signed', label:'Date Signed', type:'date', autoFill:null },
+    ],
   },
   {
     id: 'tpl-3',
     name: 'Chain of Custody',
-    fields: ['decedent_name', 'case_number', 'pickup_contact', 'pickup_phone', 'destination_contact', 'destination_phone', 'signature', 'date_signed'],
+    description: 'Chain of custody tracking document',
+    fields: [
+      { id:'decedent_name', label:'Name of Deceased', type:'text', autoFill:'decedent_name' },
+      { id:'case_number', label:'Case Number', type:'text', autoFill:'case_number' },
+      { id:'pickup_contact', label:'Pickup Contact', type:'text', autoFill:'pickup_contact' },
+      { id:'pickup_phone', label:'Pickup Phone', type:'tel', autoFill:'pickup_phone' },
+      { id:'destination_contact', label:'Destination Contact', type:'text', autoFill:'destination_contact' },
+      { id:'destination_phone', label:'Destination Phone', type:'tel', autoFill:'destination_phone' },
+      { id:'signature', label:'Signature', type:'signature', autoFill:null },
+      { id:'date_signed', label:'Date Signed', type:'date', autoFill:null },
+    ],
   },
 ];
 
 function getTemplates() {
   try {
-    const stored = localStorage.getItem('fcr_doc_templates');
-    if (stored) return JSON.parse(stored);
+    const storedVersion = localStorage.getItem('fcr_doc_templates_version');
+    if (storedVersion === TEMPLATES_VERSION) {
+      const stored = localStorage.getItem('fcr_doc_templates');
+      if (stored) return JSON.parse(stored);
+    }
   } catch (_) {}
   localStorage.setItem('fcr_doc_templates', JSON.stringify(DEFAULT_TEMPLATES));
+  localStorage.setItem('fcr_doc_templates_version', TEMPLATES_VERSION);
   return DEFAULT_TEMPLATES;
 }
 
 function saveTemplates(tpls) {
   localStorage.setItem('fcr_doc_templates', JSON.stringify(tpls));
+  localStorage.setItem('fcr_doc_templates_version', TEMPLATES_VERSION);
 }
 
 const TRANSPORT_FIELD_MAP = {
   decedent_name: 'decedentName',
   date_of_death: 'dateOfDeath',
+  date_of_birth: 'dateOfBirth',
   pickup_location: 'pickupLocation',
+  pickup_location_type: 'pickupLocationType',
   funeral_home_name: 'funeralHomeName',
   funeral_home_phone: 'funeralHomePhone',
   pickup_contact: 'pickupContact',
@@ -3322,17 +3418,26 @@ const TRANSPORT_FIELD_MAP = {
   driver_name: 'assignedDriver',
   vehicle_id: 'assignedVehicleId',
   notes: 'notes',
+  weight: 'weight',
+  actual_miles: 'actualMiles',
+  total_cost: 'totalCost',
+  created_at: 'createdAt',
 };
 
 const DocumentsPanel = ({ transports }) => {
   const [section, setSection] = useState('templates'); // 'templates' | 'fill'
   const [templates, setTemplates] = useState(getTemplates);
-  const [selectedTpl, setSelectedTpl] = useState('');
+  const [selectedTpl, setSelectedTpl] = useState('stat-mcs-first-call');
   const [selectedTransport, setSelectedTransport] = useState('');
   const [fieldValues, setFieldValues] = useState({});
   const [signatureData, setSignatureData] = useState(null);
+  const [effectsRows, setEffectsRows] = useState(
+    Array.from({ length: 10 }, (_, i) => ({ itemNum: i + 1, qty: '', description: '', jewelry: '', initials: '' }))
+  );
   const canvasRef = useRef(null);
+  const witnessCanvasRef = useRef(null);
   const isDrawing = useRef(false);
+  const isWitnessDrawing = useRef(false);
 
   // Canvas drawing (mouse + touch)
   const setupCanvas = useCallback((canvas) => {
@@ -3362,26 +3467,73 @@ const DocumentsPanel = ({ transports }) => {
 
   useEffect(() => { if (canvasRef.current) setupCanvas(canvasRef.current); }, [setupCanvas, section, selectedTpl]);
 
+  // Witness signature canvas setup
+  const setupWitnessCanvas = useCallback((canvas) => {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const getPos = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches?.[0] || e;
+      return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+    };
+    const onStart = (e) => { e.preventDefault(); isWitnessDrawing.current = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); };
+    const onMove = (e) => { e.preventDefault(); if (!isWitnessDrawing.current) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); };
+    const onEnd = () => {
+      isWitnessDrawing.current = false;
+      setFieldValues(prev => ({ ...prev, witness_signature: canvas.toDataURL() }));
+    };
+    canvas.addEventListener('mousedown', onStart);
+    canvas.addEventListener('mousemove', onMove);
+    canvas.addEventListener('mouseup', onEnd);
+    canvas.addEventListener('touchstart', onStart, { passive: false });
+    canvas.addEventListener('touchmove', onMove, { passive: false });
+    canvas.addEventListener('touchend', onEnd);
+  }, []);
+
+  useEffect(() => { if (witnessCanvasRef.current) setupWitnessCanvas(witnessCanvasRef.current); }, [setupWitnessCanvas, section, selectedTpl]);
+
   const clearSignature = () => {
     const canvas = canvasRef.current;
     if (canvas) { canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); }
     setSignatureData(null);
   };
 
+  const clearWitnessSignature = () => {
+    const canvas = witnessCanvasRef.current;
+    if (canvas) { canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); }
+    setFieldValues(prev => ({ ...prev, witness_signature: null }));
+  };
+
   // Auto-fill from transport
   useEffect(() => {
     if (!selectedTransport) { setFieldValues({}); return; }
-    const t = transports.find(t => t.id === selectedTransport);
+    const t = transports.find(tr => tr.id === selectedTransport);
     if (!t) return;
     const tpl = templates.find(tp => tp.id === selectedTpl);
     if (!tpl) return;
     const vals = {};
     for (const field of tpl.fields) {
-      if (field === 'signature' || field === 'date_signed') continue;
-      const key = TRANSPORT_FIELD_MAP[field];
-      vals[field] = key ? (t[key] || '') : '';
+      // Handle both legacy string fields and new object fields
+      if (typeof field === 'string') {
+        if (field === 'signature' || field === 'date_signed') continue;
+        const key = TRANSPORT_FIELD_MAP[field];
+        vals[field] = key ? (t[key] || '') : '';
+      } else {
+        // New object field with autoFill key
+        if (field.type === 'signature') continue;
+        if (field.autoFill) {
+          const key = TRANSPORT_FIELD_MAP[field.autoFill] || field.autoFill;
+          vals[field.id] = t[key] || '';
+        }
+      }
     }
-    vals['date_signed'] = new Date().toLocaleDateString();
+    if (!vals['date_signed']) vals['date_signed'] = new Date().toLocaleDateString();
+    if (!vals['sign_date']) vals['sign_date'] = new Date().toISOString().split('T')[0];
+    if (!vals['date']) vals['date'] = new Date().toISOString().split('T')[0];
     setFieldValues(vals);
   }, [selectedTransport, selectedTpl, transports, templates]);
 
@@ -3390,22 +3542,53 @@ const DocumentsPanel = ({ transports }) => {
     if (!tpl) return;
     const printDiv = document.createElement('div');
     printDiv.id = 'fcr-print-doc';
+
+    const renderFieldHtml = (f) => {
+      if (typeof f === 'string') {
+        // Legacy string field
+        if (f === 'signature') return `<div class="field-row"><div class="field-label">Signature</div>${signatureData ? `<img src="${signatureData}" class="sig-img" style="height:80px;" />` : '<div class="field-value"></div>'}</div>`;
+        const label = f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        return `<div class="field-row"><div class="field-label">${label}</div><div class="field-value">${fieldValues[f] || ''}</div></div>`;
+      }
+      // New object field
+      const val = fieldValues[f.id] || '';
+      if (f.type === 'signature') {
+        const sig = f.id === 'witness_signature' ? (fieldValues.witness_signature || null) : signatureData;
+        return `<div class="field-row"><div class="field-label">${f.label}</div>${sig ? `<img src="${sig}" class="sig-img" style="height:80px;" />` : '<div class="field-value"></div>'}</div>`;
+      }
+      if (f.type === 'yn') {
+        return `<div class="field-row"><div class="field-label">${f.label}</div><div class="field-value">${val === 'Y' ? '☑ Yes' : val === 'N' ? '☑ No' : '☐ Yes  ☐ No'}</div></div>`;
+      }
+      if (f.type === 'checkbox') {
+        return `<div class="field-row"><div class="field-label">${f.label}</div><div class="field-value">${val ? '☑ Checked' : '☐'}</div></div>`;
+      }
+      if (f.type === 'effects_table') {
+        const rowsHtml = effectsRows.map(r =>
+          `<tr><td style="padding:4px 8px;border:1px solid #ccc;text-align:center">${r.itemNum}</td><td style="padding:4px 8px;border:1px solid #ccc">${r.qty}</td><td style="padding:4px 8px;border:1px solid #ccc">${r.description}</td><td style="padding:4px 8px;border:1px solid #ccc">${r.jewelry}</td><td style="padding:4px 8px;border:1px solid #ccc">${r.initials}</td></tr>`
+        ).join('');
+        return `<div class="field-row"><div class="field-label">${f.label}</div><table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px"><thead><tr><th style="padding:4px 8px;border:1px solid #ccc;background:#f5f5f5">Item #</th><th style="padding:4px 8px;border:1px solid #ccc;background:#f5f5f5">Qty</th><th style="padding:4px 8px;border:1px solid #ccc;background:#f5f5f5">Clothing/Item Description</th><th style="padding:4px 8px;border:1px solid #ccc;background:#f5f5f5">Jewelry</th><th style="padding:4px 8px;border:1px solid #ccc;background:#f5f5f5">Witness Initials</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+      }
+      if (f.type === 'currency') {
+        return `<div class="field-row"><div class="field-label">${f.label}</div><div class="field-value">$${val}</div></div>`;
+      }
+      return `<div class="field-row"><div class="field-label">${f.label}</div><div class="field-value">${val}</div></div>`;
+    };
+
+    const headerHtml = tpl.printHeader ? `<div style="font-size:11px;color:#555;text-align:center;margin-bottom:16px;padding:8px;background:#f8f8f8;border-radius:4px">${tpl.printHeader}</div>` : '';
+
     printDiv.innerHTML = `
       <style>
         @media print { body > *:not(#fcr-print-doc) { display: none !important; } #fcr-print-doc { display: block !important; } }
         #fcr-print-doc { font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 40px; }
-        #fcr-print-doc h1 { font-size: 22px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 24px; }
-        #fcr-print-doc .field-row { margin-bottom: 16px; }
+        #fcr-print-doc h1 { font-size: 22px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 8px; }
+        #fcr-print-doc .field-row { margin-bottom: 14px; }
         #fcr-print-doc .field-label { font-size: 11px; font-weight: bold; text-transform: uppercase; color: #555; margin-bottom: 4px; }
         #fcr-print-doc .field-value { font-size: 14px; border-bottom: 1px solid #ccc; padding: 4px 0; min-height: 24px; }
         #fcr-print-doc .sig-img { border: 1px solid #999; border-radius: 4px; }
       </style>
       <h1>${tpl.name}</h1>
-      ${tpl.fields.map(f => {
-        if (f === 'signature') return `<div class="field-row"><div class="field-label">Signature</div>${signatureData ? `<img src="${signatureData}" class="sig-img" style="height:80px;" />` : '<div class="field-value"></div>'}</div>`;
-        const label = f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        return `<div class="field-row"><div class="field-label">${label}</div><div class="field-value">${fieldValues[f] || ''}</div></div>`;
-      }).join('')}
+      ${headerHtml}
+      ${tpl.fields.map(renderFieldHtml).join('')}
     `;
     document.body.appendChild(printDiv);
     window.print();
@@ -3460,20 +3643,28 @@ const DocumentsPanel = ({ transports }) => {
             </label>
           </div>
           <div className="space-y-2">
-            {templates.map(tpl => (
-              <div key={tpl.id} className="bg-white rounded-lg border border-gray-200 p-4 flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">{tpl.name}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{tpl.fields.length} fields: {tpl.fields.slice(0, 4).join(', ')}{tpl.fields.length > 4 ? '...' : ''}</p>
+            {templates.map(tpl => {
+              const fieldCount = tpl.fields.length;
+              const previewNames = tpl.fields.slice(0, 4).map(f => typeof f === 'string' ? f.replace(/_/g, ' ') : f.label).join(', ');
+              return (
+                <div key={tpl.id} className={`bg-white rounded-lg border p-4 flex items-center justify-between ${tpl.id === 'stat-mcs-first-call' ? 'border-blue-300 ring-1 ring-blue-200' : 'border-gray-200'}`}>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-gray-900">{tpl.name}</p>
+                      {tpl.id === 'stat-mcs-first-call' && <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full">Primary</span>}
+                    </div>
+                    {tpl.description && <p className="text-xs text-gray-500 mt-0.5">{tpl.description}</p>}
+                    <p className="text-xs text-gray-400 mt-0.5">{fieldCount} fields: {previewNames}{fieldCount > 4 ? '...' : ''}</p>
+                  </div>
+                  <button
+                    onClick={() => { setSelectedTpl(tpl.id); setSection('fill'); setFieldValues({}); setSignatureData(null); }}
+                    className="text-sm bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-600 px-3 py-1.5 rounded-lg font-medium"
+                  >
+                    Fill →
+                  </button>
                 </div>
-                <button
-                  onClick={() => { setSelectedTpl(tpl.id); setSection('fill'); setFieldValues({}); setSignatureData(null); }}
-                  className="text-sm bg-gray-100 text-gray-700 hover:bg-blue-50 hover:text-blue-600 px-3 py-1.5 rounded-lg font-medium"
-                >
-                  Fill →
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -3507,33 +3698,172 @@ const DocumentsPanel = ({ transports }) => {
 
           {currentTpl && (
             <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
-              <h3 className="font-semibold text-gray-800">{currentTpl.name}</h3>
+              <div>
+                <h3 className="font-semibold text-gray-800">{currentTpl.name}</h3>
+                {currentTpl.printHeader && <p className="text-xs text-gray-500 mt-1">{currentTpl.printHeader}</p>}
+              </div>
               {currentTpl.fields.map(field => {
-                if (field === 'signature') return (
-                  <div key="signature">
-                    <label className="block text-sm font-medium text-gray-600 mb-1">Signature</label>
-                    <canvas
-                      ref={canvasRef}
-                      width={400} height={150}
-                      className="border-2 border-gray-300 rounded-lg bg-white w-full touch-none"
-                      style={{ maxWidth: '100%', cursor: 'crosshair' }}
-                    />
-                    <div className="flex gap-2 mt-1">
-                      <button onClick={clearSignature} className="text-xs text-gray-500 hover:text-red-600 px-2 py-1 border border-gray-200 rounded">
-                        Clear
-                      </button>
-                      {signatureData && <span className="text-xs text-green-600 py-1">✓ Signature saved</span>}
+                // ── Legacy string fields ──────────────────────────────
+                if (typeof field === 'string') {
+                  if (field === 'signature') return (
+                    <div key="signature">
+                      <label className="block text-sm font-medium text-gray-600 mb-1">Signature</label>
+                      <canvas
+                        ref={canvasRef}
+                        width={400} height={150}
+                        className="border-2 border-gray-300 rounded-lg bg-white w-full touch-none"
+                        style={{ maxWidth: '100%', cursor: 'crosshair' }}
+                      />
+                      <div className="flex gap-2 mt-1">
+                        <button onClick={clearSignature} className="text-xs text-gray-500 hover:text-red-600 px-2 py-1 border border-gray-200 rounded">Clear</button>
+                        {signatureData && <span className="text-xs text-green-600 py-1">✓ Signature saved</span>}
+                      </div>
+                    </div>
+                  );
+                  const label = field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                  return (
+                    <div key={field}>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
+                      <input type="text" value={fieldValues[field] || ''}
+                        onChange={e => setFieldValues(prev => ({ ...prev, [field]: e.target.value }))}
+                        className="w-full p-2 border border-gray-300 rounded text-sm" placeholder={label} />
+                    </div>
+                  );
+                }
+
+                // ── New rich object fields ────────────────────────────
+                const { id, label, type, options } = field;
+                const val = fieldValues[id] || '';
+
+                if (type === 'yn') return (
+                  <div key={id}>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
+                    <div className="flex gap-2">
+                      {['Y', 'N'].map(opt => (
+                        <button key={opt}
+                          onClick={() => setFieldValues(prev => ({ ...prev, [id]: prev[id] === opt ? '' : opt }))}
+                          className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${val === opt ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-700 border-gray-300 hover:border-gray-500'}`}>
+                          {opt === 'Y' ? 'Yes' : 'No'}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 );
-                const label = field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+                if (type === 'checkbox') return (
+                  <div key={id} className="flex items-center gap-2">
+                    <input type="checkbox" id={`chk-${id}`} checked={!!val}
+                      onChange={e => setFieldValues(prev => ({ ...prev, [id]: e.target.checked }))}
+                      className="w-4 h-4 rounded border-gray-300" />
+                    <label htmlFor={`chk-${id}`} className="text-sm font-medium text-gray-700">{label}</label>
+                  </div>
+                );
+
+                if (type === 'select') return (
+                  <div key={id}>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
+                    <select value={val} onChange={e => setFieldValues(prev => ({ ...prev, [id]: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded text-sm">
+                      <option value="">— Select —</option>
+                      {(options || []).map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </div>
+                );
+
+                if (type === 'textarea') return (
+                  <div key={id}>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
+                    <textarea value={val} onChange={e => setFieldValues(prev => ({ ...prev, [id]: e.target.value }))}
+                      rows={3} className="w-full p-2 border border-gray-300 rounded text-sm" placeholder={label} />
+                  </div>
+                );
+
+                if (type === 'currency') return (
+                  <div key={id}>
+                    <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
+                    <div className="flex items-center border border-gray-300 rounded overflow-hidden">
+                      <span className="px-2 py-2 bg-gray-50 text-gray-500 text-sm border-r border-gray-300">$</span>
+                      <input type="text" value={val} onChange={e => setFieldValues(prev => ({ ...prev, [id]: e.target.value }))}
+                        className="flex-1 p-2 text-sm outline-none" placeholder="0.00" />
+                    </div>
+                  </div>
+                );
+
+                if (type === 'signature') {
+                  const isWitness = id === 'witness_signature';
+                  const sigData = isWitness ? fieldValues.witness_signature : signatureData;
+                  return (
+                    <div key={id}>
+                      <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
+                      <canvas
+                        ref={isWitness ? witnessCanvasRef : canvasRef}
+                        width={400} height={120}
+                        className="border-2 border-gray-300 rounded-lg bg-white w-full touch-none"
+                        style={{ maxWidth: '100%', cursor: 'crosshair' }}
+                      />
+                      <div className="flex gap-2 mt-1">
+                        <button onClick={isWitness ? clearWitnessSignature : clearSignature}
+                          className="text-xs text-gray-500 hover:text-red-600 px-2 py-1 border border-gray-200 rounded">Clear</button>
+                        {sigData && <span className="text-xs text-green-600 py-1">✓ Signature saved</span>}
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (type === 'effects_table') return (
+                  <div key={id}>
+                    <label className="block text-sm font-medium text-gray-600 mb-2">{label}</label>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-gray-50">
+                            <th className="border border-gray-300 px-2 py-1 text-center w-10">Item #</th>
+                            <th className="border border-gray-300 px-2 py-1 w-14">Qty</th>
+                            <th className="border border-gray-300 px-2 py-1">Clothing/Item Description</th>
+                            <th className="border border-gray-300 px-2 py-1">Jewelry</th>
+                            <th className="border border-gray-300 px-2 py-1 w-20">Witness Initials</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {effectsRows.map((row, i) => (
+                            <tr key={i}>
+                              <td className="border border-gray-300 px-2 py-1 text-center text-gray-500">{row.itemNum}</td>
+                              <td className="border border-gray-300 p-0">
+                                <input type="number" value={row.qty}
+                                  onChange={e => setEffectsRows(prev => prev.map((r, ri) => ri === i ? { ...r, qty: e.target.value } : r))}
+                                  className="w-full p-1 outline-none text-center" min="0" />
+                              </td>
+                              <td className="border border-gray-300 p-0">
+                                <input type="text" value={row.description}
+                                  onChange={e => setEffectsRows(prev => prev.map((r, ri) => ri === i ? { ...r, description: e.target.value } : r))}
+                                  className="w-full p-1 outline-none" />
+                              </td>
+                              <td className="border border-gray-300 p-0">
+                                <input type="text" value={row.jewelry}
+                                  onChange={e => setEffectsRows(prev => prev.map((r, ri) => ri === i ? { ...r, jewelry: e.target.value } : r))}
+                                  className="w-full p-1 outline-none" />
+                              </td>
+                              <td className="border border-gray-300 p-0">
+                                <input type="text" value={row.initials} maxLength={6}
+                                  onChange={e => setEffectsRows(prev => prev.map((r, ri) => ri === i ? { ...r, initials: e.target.value } : r))}
+                                  className="w-full p-1 outline-none text-center" />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+
+                // Default: text/number/date/time/tel/email
                 return (
-                  <div key={field}>
+                  <div key={id}>
                     <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
                     <input
-                      type="text"
-                      value={fieldValues[field] || ''}
-                      onChange={e => setFieldValues(prev => ({ ...prev, [field]: e.target.value }))}
+                      type={type === 'tel' ? 'tel' : type === 'email' ? 'email' : type === 'number' ? 'number' : type === 'date' ? 'date' : type === 'time' ? 'time' : 'text'}
+                      value={val}
+                      onChange={e => setFieldValues(prev => ({ ...prev, [id]: e.target.value }))}
                       className="w-full p-2 border border-gray-300 rounded text-sm"
                       placeholder={label}
                     />
