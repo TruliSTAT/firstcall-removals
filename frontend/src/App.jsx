@@ -225,7 +225,7 @@ const AdvanceStatusButton = ({ transport, onAdvance, loading, etaValue, onEtaCha
 };
 
 // Dispatch board card
-const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles, onEdit }) => {
+const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles, onEdit, currentUser }) => {
   const [showAssign, setShowAssign] = useState(false);
   const [selDriver, setSelDriver] = useState(transport.assignedDriverId || '');
   const [selVehicle, setSelVehicle] = useState(transport.assignedVehicleId || '');
@@ -344,13 +344,16 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
           onEtaChange={(v) => setEtaValue(transport.id, v)}
         />
       )}
+
+      {/* Per-transport chat */}
+      <TransportChat transportId={transport.id} currentUser={currentUser} />
     </div>
   );
 };
 
 // ─── Dispatch Board ───────────────────────────────────────────────────────────
 
-const DispatchBoard = ({ transports, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles, onEdit }) => {
+const DispatchBoard = ({ transports, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles, onEdit, currentUser }) => {
   const now = Date.now();
   const yesterday = now - 24 * 60 * 60 * 1000;
 
@@ -402,6 +405,7 @@ const DispatchBoard = ({ transports, userRole, onAdvance, loading, etaValues, se
                     drivers={drivers}
                     vehicles={vehicles}
                     onEdit={onEdit}
+                    currentUser={currentUser}
                   />
                 ))}
               </div>
@@ -1080,6 +1084,14 @@ const FuneralTransportApp = () => {
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [adminUsersSearch, setAdminUsersSearch] = useState('');
 
+  // Invoices state
+  const [invoices, setInvoices] = useState([]);
+  const [invoicesFilter, setInvoicesFilter] = useState('all');
+  const [invoicesLoading, setInvoicesLoading] = useState(false);
+  const [showCreateInvoice, setShowCreateInvoice] = useState(false);
+  const [invoiceForm, setInvoiceForm] = useState({ transportId: '', funeralHomeName: '', funeralHomeEmail: '', decedentName: '', pickupFee: '', mileageFee: '', obFee: '', adminFee: '10', totalCost: '', actualMiles: '', notes: '' });
+  const [invoiceError, setInvoiceError] = useState('');
+
   // Funeral homes
   const [funeralHomes, setFuneralHomes] = useState([]);
   const [funeralHomeCallers, setFuneralHomeCallers] = useState([]);
@@ -1172,6 +1184,25 @@ const FuneralTransportApp = () => {
     return () => clearInterval(interval);
   }, [isLoggedIn, fetchData, fetchNotifications]);
 
+  // Pre-fill invoice form when transport selected
+  useEffect(() => {
+    if (!invoiceForm.transportId) return;
+    const t = transports.find(t => t.id === invoiceForm.transportId);
+    if (!t) return;
+    setInvoiceForm(prev => ({
+      ...prev,
+      funeralHomeName: t.funeralHomeName || prev.funeralHomeName,
+      decedentName: t.decedentName || prev.decedentName,
+      pickupFee: String(t.costBreakdown?.pickupFee ?? prev.pickupFee),
+      mileageFee: String(t.costBreakdown?.mileageFee ?? prev.mileageFee),
+      obFee: String(t.costBreakdown?.obFee ?? prev.obFee),
+      adminFee: String(t.costBreakdown?.adminFee ?? prev.adminFee),
+      totalCost: String(t.totalCost ?? prev.totalCost),
+      actualMiles: String(t.actualMiles || prev.actualMiles),
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceForm.transportId]);
+
   // Auto-dismiss alerts after 30 seconds
   useEffect(() => {
     if (!alerts.length) return;
@@ -1250,14 +1281,17 @@ const FuneralTransportApp = () => {
         funeralHomeName,
       };
       const result = await apiRequest('POST', '/auth/register', payload);
-      // New flow: email verification required — no token returned until verified
-      if (result.success && result.message) {
+      if (result.success) {
+        // Instant access — show success banner and switch to login
         setRegisterError('');
         setShowRegister(false);
-        setShowVerifyPrompt(true);
+        setLoginError('');
+        setLoginData(prev => ({ ...prev, username: registerData.username }));
+        setRegisterData({ username: '', email: '', password: '', role: 'funeral_home', inviteCode: '', funeralHomeId: '', funeralHomeName: '', customFuneralHome: '' });
+        // Reuse loginError state to show green success (we'll check prefix)
+        setLoginError('✅ Account created! You can now log in.');
         return;
       }
-      // Legacy / employee flow: token returned immediately
       if (result.token) {
         setToken(result.token);
         setCurrentUser(result.user);
@@ -1337,6 +1371,54 @@ const FuneralTransportApp = () => {
       setAdminUsersLoading(false);
     }
   }, []);
+
+  const fetchInvoices = useCallback(async (status) => {
+    setInvoicesLoading(true);
+    try {
+      const q = status && status !== 'all' ? `?status=${status}` : '';
+      const { invoices: data } = await apiRequest('GET', `/invoices${q}`);
+      setInvoices(data || []);
+    } catch (err) {
+      console.error('Failed to load invoices:', err.message);
+    } finally {
+      setInvoicesLoading(false);
+    }
+  }, []);
+
+  const handleCreateInvoice = async () => {
+    setInvoiceError('');
+    if (!invoiceForm.transportId) { setInvoiceError('Select a transport'); return; }
+    try {
+      const { invoice } = await apiRequest('POST', '/invoices', {
+        ...invoiceForm,
+        pickupFee: parseFloat(invoiceForm.pickupFee) || 0,
+        mileageFee: parseFloat(invoiceForm.mileageFee) || 0,
+        obFee: parseFloat(invoiceForm.obFee) || 0,
+        adminFee: parseFloat(invoiceForm.adminFee) || 10,
+        totalCost: parseFloat(invoiceForm.totalCost) || 0,
+        actualMiles: parseInt(invoiceForm.actualMiles) || 0,
+      });
+      setInvoices(prev => [invoice, ...prev]);
+      setShowCreateInvoice(false);
+      setInvoiceForm({ transportId: '', funeralHomeName: '', funeralHomeEmail: '', decedentName: '', pickupFee: '', mileageFee: '', obFee: '', adminFee: '10', totalCost: '', actualMiles: '', notes: '' });
+    } catch (err) {
+      setInvoiceError(err.message);
+    }
+  };
+
+  const handleApproveInvoice = async (id) => {
+    try {
+      const { invoice } = await apiRequest('PUT', `/invoices/${id}/approve`);
+      setInvoices(prev => prev.map(i => i.id === id ? invoice : i));
+    } catch (err) { setApiError(err.message); }
+  };
+
+  const handleSendInvoice = async (id) => {
+    try {
+      const { invoice } = await apiRequest('PUT', `/invoices/${id}/send`);
+      setInvoices(prev => prev.map(i => i.id === id ? invoice : i));
+    } catch (err) { setApiError(err.message); }
+  };
 
   const assignDriverAndVehicle = async (requestId, driverId, vehicleId) => {
     if (!driverId && !vehicleId) {
@@ -1555,29 +1637,6 @@ const FuneralTransportApp = () => {
   // ── Login screen ─────────────────────────────────────────────────────────
 
   if (!isLoggedIn) {
-    // Email verification success prompt
-    if (showVerifyPrompt) {
-      return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-md p-8 w-full max-w-md text-center">
-            <img src="/logos/wings-only.jpg" alt="STAT First Call Removals" className="h-20 mx-auto mb-4 object-contain" />
-            <div className="text-5xl mb-4">✉️</div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Check Your Email</h2>
-            <p className="text-gray-600 mb-6">
-              We sent a verification link to your email address. Click the link to activate your account, then come back to log in.
-            </p>
-            <p className="text-xs text-gray-400 mb-6">The link expires in 24 hours. Check your spam folder if you don't see it.</p>
-            <button
-              onClick={() => setShowVerifyPrompt(false)}
-              className="w-full py-2 px-4 bg-gray-800 text-white rounded-lg hover:bg-gray-700 font-medium"
-            >
-              Back to Login
-            </button>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-md p-6 w-full max-w-md">
@@ -1593,7 +1652,7 @@ const FuneralTransportApp = () => {
           {!showRegister ? (
             <div className="space-y-4">
               {loginError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+                <div className={`px-3 py-2 rounded text-sm ${loginError.startsWith('✅') ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
                   {loginError}
                 </div>
               )}
@@ -1835,6 +1894,9 @@ const FuneralTransportApp = () => {
                   </TabBtn>
                   <TabBtn active={activeTab === 'funeral-homes'} onClick={() => setActiveTab('funeral-homes')}>
                     <Building2 className="w-4 h-4 inline mr-1" />Funeral Homes
+                  </TabBtn>
+                  <TabBtn active={activeTab === 'invoices'} onClick={() => setActiveTab('invoices')}>
+                    🧾 Invoices
                   </TabBtn>
                 </>
               )}
@@ -2321,7 +2383,7 @@ const FuneralTransportApp = () => {
             ) : (
               <div className="space-y-4">
                 {myTransports.filter(t => t.status !== 'Completed').map((transport) => (
-                  <TransportCard key={transport.id} transport={transport} onSaveNotes={saveNotes} onCopyCase={handleCopyCase} copiedId={copiedId} />
+                  <TransportCard key={transport.id} transport={transport} onSaveNotes={saveNotes} onCopyCase={handleCopyCase} copiedId={copiedId} currentUser={currentUser} />
                 ))}
               </div>
             )}
@@ -2365,6 +2427,7 @@ const FuneralTransportApp = () => {
               drivers={drivers}
               vehicles={vehicles}
               onEdit={t => setEditTransport(t)}
+              currentUser={currentUser}
             />
           </div>
         )}
@@ -2546,6 +2609,26 @@ const FuneralTransportApp = () => {
         {/* ── Documents Tab ────────────────────────────────────────────── */}
         {activeTab === 'documents' && (
           <DocumentsPanel transports={transports} />
+        )}
+
+        {/* ── Invoices Tab (Admin only) ─────────────────────────────────── */}
+        {activeTab === 'invoices' && userRole === 'admin' && (
+          <InvoicesPanel
+            invoices={invoices}
+            invoicesFilter={invoicesFilter}
+            invoicesLoading={invoicesLoading}
+            transports={transports}
+            showCreateInvoice={showCreateInvoice}
+            setShowCreateInvoice={setShowCreateInvoice}
+            invoiceForm={invoiceForm}
+            setInvoiceForm={setInvoiceForm}
+            invoiceError={invoiceError}
+            onFetch={fetchInvoices}
+            setInvoicesFilter={setInvoicesFilter}
+            onCreate={handleCreateInvoice}
+            onApprove={handleApproveInvoice}
+            onSend={handleSendInvoice}
+          />
         )}
 
         {/* ── Fleet Tab (Admin only) ───────────────────────────────────── */}
@@ -2852,6 +2935,341 @@ const EditTransportModal = ({ transport, drivers, vehicles, onClose, onSave }) =
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+// ─── Invoices Panel ──────────────────────────────────────────────────────────
+
+const INVOICE_STATUS_COLORS = {
+  draft: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  approved: 'bg-blue-100 text-blue-800 border-blue-300',
+  sent: 'bg-green-100 text-green-800 border-green-300',
+};
+
+const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, showCreateInvoice, setShowCreateInvoice, invoiceForm, setInvoiceForm, invoiceError, onFetch, setInvoicesFilter, onCreate, onApprove, onSend }) => {
+  useEffect(() => { onFetch(invoicesFilter); }, [invoicesFilter]);
+
+  const completedTransports = transports.filter(t => t.status === 'Completed');
+  const allTransports = transports;
+
+  const recalcTotal = (form) => {
+    const t = (parseFloat(form.pickupFee) || 0) + (parseFloat(form.mileageFee) || 0) + (parseFloat(form.obFee) || 0) + (parseFloat(form.adminFee) || 0);
+    return String(t.toFixed(2));
+  };
+
+  const updateField = (field, value) => {
+    setInvoiceForm(prev => {
+      const next = { ...prev, [field]: value };
+      if (['pickupFee', 'mileageFee', 'obFee', 'adminFee'].includes(field)) {
+        next.totalCost = recalcTotal(next);
+      }
+      return next;
+    });
+  };
+
+  const filtered = invoices.filter(inv => invoicesFilter === 'all' || inv.status === invoicesFilter);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">🧾 Invoices</h2>
+        <button
+          onClick={() => setShowCreateInvoice(true)}
+          className="flex items-center gap-1.5 text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-medium"
+        >
+          <Plus className="w-4 h-4" /> Create Invoice
+        </button>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+        {['all', 'draft', 'approved', 'sent'].map(f => (
+          <button key={f} onClick={() => setInvoicesFilter(f)}
+            className={`flex-1 py-1.5 text-xs font-medium rounded-md capitalize transition-colors ${invoicesFilter === f ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {/* Create Invoice Modal */}
+      {showCreateInvoice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
+              <h3 className="font-semibold text-gray-900">Create Invoice</h3>
+              <button onClick={() => setShowCreateInvoice(false)}><X className="w-5 h-5 text-gray-400 hover:text-gray-600" /></button>
+            </div>
+            <div className="p-4 space-y-3">
+              {invoiceError && <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{invoiceError}</div>}
+
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Transport *</label>
+                <select value={invoiceForm.transportId} onChange={e => updateField('transportId', e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded text-sm">
+                  <option value="">— Select completed transport —</option>
+                  {completedTransports.map(t => (
+                    <option key={t.id} value={t.id}>{t.decedentName || t.id} — {t.funeralHomeName || '?'} ({t.id})</option>
+                  ))}
+                  {completedTransports.length === 0 && allTransports.map(t => (
+                    <option key={t.id} value={t.id}>{t.decedentName || t.id} [{t.status}]</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Funeral Home Name</label>
+                  <input value={invoiceForm.funeralHomeName} onChange={e => updateField('funeralHomeName', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Funeral home" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Send Invoice To (email)</label>
+                  <input type="email" value={invoiceForm.funeralHomeEmail} onChange={e => updateField('funeralHomeEmail', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="billing@funeralhome.com" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Decedent Name</label>
+                  <input value={invoiceForm.decedentName} onChange={e => updateField('decedentName', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="Full name" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Pickup Fee $</label>
+                  <input type="number" value={invoiceForm.pickupFee} onChange={e => updateField('pickupFee', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="195" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Mileage Fee $</label>
+                  <input type="number" value={invoiceForm.mileageFee} onChange={e => updateField('mileageFee', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="0" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">OB Fee $</label>
+                  <input type="number" value={invoiceForm.obFee} onChange={e => updateField('obFee', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="0" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Admin Fee $</label>
+                  <input type="number" value={invoiceForm.adminFee} onChange={e => updateField('adminFee', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="10" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Actual Miles</label>
+                  <input type="number" value={invoiceForm.actualMiles} onChange={e => updateField('actualMiles', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" placeholder="0" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Total $ (auto)</label>
+                  <input type="number" value={invoiceForm.totalCost} onChange={e => updateField('totalCost', e.target.value)}
+                    className="w-full p-2 border border-blue-200 bg-blue-50 rounded text-sm font-bold" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
+                  <textarea value={invoiceForm.notes} onChange={e => updateField('notes', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded text-sm" rows={2} placeholder="Optional notes" />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setShowCreateInvoice(false)}
+                  className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50">
+                  Cancel
+                </button>
+                <button onClick={onCreate}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+                  Save Draft
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice list */}
+      {invoicesLoading ? (
+        <div className="text-center py-8 text-gray-400"><Loader className="w-6 h-6 animate-spin mx-auto mb-2" />Loading...</div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 text-gray-400">
+          <FileText className="w-12 h-12 mx-auto mb-2 opacity-30" />
+          <p>No invoices {invoicesFilter !== 'all' ? `with status "${invoicesFilter}"` : ''}</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map(inv => (
+            <div key={inv.id} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className={`text-xs px-2 py-0.5 rounded-full border font-medium capitalize ${INVOICE_STATUS_COLORS[inv.status] || 'bg-gray-100 text-gray-700 border-gray-300'}`}>
+                      {inv.status}
+                    </span>
+                    <span className="text-xs font-mono text-gray-400">{inv.transportId}</span>
+                  </div>
+                  <p className="font-semibold text-gray-900">{inv.decedentName || '—'}</p>
+                  <p className="text-sm text-gray-500">{inv.funeralHomeName}</p>
+                  {inv.funeralHomeEmail && <p className="text-xs text-gray-400">{inv.funeralHomeEmail}</p>}
+                  {inv.sentAt && <p className="text-xs text-green-600 mt-0.5">Sent {new Date(inv.sentAt).toLocaleDateString()}</p>}
+                  {inv.approvedAt && !inv.sentAt && <p className="text-xs text-blue-600 mt-0.5">Approved {new Date(inv.approvedAt).toLocaleDateString()} by {inv.approvedBy}</p>}
+                </div>
+                <div className="flex-shrink-0 text-right">
+                  <p className="text-lg font-bold text-gray-900">${parseFloat(inv.totalCost).toFixed(2)}</p>
+                  <p className="text-xs text-gray-400">{new Date(inv.createdAt).toLocaleDateString()}</p>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                {inv.status === 'draft' && (
+                  <button onClick={() => onApprove(inv.id)}
+                    className="flex-1 text-xs bg-blue-600 text-white py-1.5 px-3 rounded-lg hover:bg-blue-700 font-medium">
+                    ✅ Approve
+                  </button>
+                )}
+                {(inv.status === 'approved' || inv.status === 'sent') && (
+                  <button onClick={() => onSend(inv.id)}
+                    disabled={!inv.funeralHomeEmail}
+                    className="flex-1 text-xs bg-green-600 text-white py-1.5 px-3 rounded-lg hover:bg-green-700 font-medium disabled:opacity-40"
+                    title={!inv.funeralHomeEmail ? 'Add email to send' : ''}>
+                    {inv.status === 'sent' ? '📧 Resend' : '📧 Send'}
+                  </button>
+                )}
+                {inv.status === 'draft' && (
+                  <button onClick={() => onApprove(inv.id)}
+                    className="flex-1 text-xs border border-blue-200 text-blue-600 py-1.5 px-3 rounded-lg hover:bg-blue-50 font-medium">
+                    Approve &amp; Lock
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Transport Chat ───────────────────────────────────────────────────────────
+
+const ROLE_LABEL = { admin: 'Dispatch', employee: 'Driver', funeral_home: 'Funeral Home' };
+const ROLE_BADGE_COLOR = { admin: 'bg-gray-200 text-gray-700', employee: 'bg-blue-100 text-blue-700', funeral_home: 'bg-green-100 text-green-700' };
+
+const TransportChat = ({ transportId, currentUser }) => {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef(null);
+  const pollRef = useRef(null);
+
+  const loadMessages = useCallback(async () => {
+    try {
+      const { messages: msgs } = await apiRequest('GET', `/transports/${transportId}/messages`);
+      setMessages(msgs || []);
+    } catch (_) {}
+  }, [transportId]);
+
+  useEffect(() => {
+    if (!open) return;
+    loadMessages();
+    pollRef.current = setInterval(loadMessages, 15000);
+    return () => clearInterval(pollRef.current);
+  }, [open, loadMessages]);
+
+  useEffect(() => {
+    if (open && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, open]);
+
+  const sendMessage = async () => {
+    if (!input.trim() || sending) return;
+    const text = input.trim();
+    setInput('');
+    setSending(true);
+    // Optimistic
+    const optimistic = {
+      id: Date.now(),
+      transport_id: transportId,
+      user_id: currentUser?.id,
+      username: currentUser?.username || 'You',
+      role: currentUser?.role || 'funeral_home',
+      message: text,
+      created_at: new Date().toISOString(),
+      _optimistic: true,
+    };
+    setMessages(prev => [...prev, optimistic]);
+    try {
+      await apiRequest('POST', `/transports/${transportId}/messages`, { message: text });
+      await loadMessages();
+    } catch (_) {
+      setMessages(prev => prev.filter(m => m !== optimistic));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const isOwn = (msg) => msg.user_id === currentUser?.id || msg.username === currentUser?.username;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 font-medium w-full"
+      >
+        <span>💬 Chat</span>
+        {messages.length > 0 && !open && (
+          <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">{messages.length}</span>
+        )}
+        <span className="ml-auto">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-2">
+          {/* Message list */}
+          <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+            {messages.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-4 italic">No messages yet — send one to get started</p>
+            ) : (
+              messages.map(msg => {
+                const own = isOwn(msg);
+                return (
+                  <div key={msg.id} className={`flex ${own ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${own ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className={`text-xs font-medium ${own ? 'text-blue-200' : 'text-gray-500'}`}>{msg.username}</span>
+                        <span className={`text-xs px-1.5 py-0 rounded-full ${own ? 'bg-blue-500 text-blue-100' : ROLE_BADGE_COLOR[msg.role] || 'bg-gray-200 text-gray-600'}`}>
+                          {ROLE_LABEL[msg.role] || msg.role}
+                        </span>
+                      </div>
+                      <p className="break-words">{msg.message}</p>
+                      <p className={`text-xs mt-0.5 ${own ? 'text-blue-200' : 'text-gray-400'}`}>
+                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            <div ref={bottomRef} />
+          </div>
+          {/* Input */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+              placeholder="Type a message..."
+              className="flex-1 text-sm p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim() || sending}
+              className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-40"
+            >
+              {sending ? <Loader className="w-4 h-4 animate-spin" /> : 'Send'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -3262,7 +3680,7 @@ const FormField = ({ label, children, confidence }) => (
 );
 
 // Transport card for funeral home "My Transports" view
-const TransportCard = ({ transport, onSaveNotes, onCopyCase, copiedId }) => {
+const TransportCard = ({ transport, onSaveNotes, onCopyCase, copiedId, currentUser }) => {
   const [notesInput, setNotesInput] = useState(transport.notes || '');
   const [editingNotes, setEditingNotes] = useState(false);
 
@@ -3392,6 +3810,9 @@ const TransportCard = ({ transport, onSaveNotes, onCopyCase, copiedId }) => {
           </div>
         )}
       </div>
+
+      {/* Per-transport chat */}
+      <TransportChat transportId={transport.id} currentUser={currentUser} />
     </div>
   );
 };
