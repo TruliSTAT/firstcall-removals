@@ -237,6 +237,19 @@ function migrateDb(db) {
     );
   `);
 
+  // Transport documents table (saved filled forms)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS transport_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transport_id TEXT NOT NULL,
+      template_name TEXT NOT NULL,
+      field_data TEXT NOT NULL,
+      signature_data TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      created_by TEXT
+    );
+  `);
+
   seedFuneralHomes(db);
 }
 

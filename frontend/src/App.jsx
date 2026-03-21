@@ -2950,6 +2950,21 @@ const INVOICE_STATUS_COLORS = {
   sent: 'bg-green-100 text-green-800 border-green-300',
 };
 
+const InvoiceDocCount = ({ transportId }) => {
+  const [count, setCount] = useState(null);
+  useEffect(() => {
+    if (!transportId) return;
+    apiRequest('GET', `/transports/${transportId}/documents`)
+      .then(({ documents }) => setCount(documents.length))
+      .catch(() => setCount(0));
+  }, [transportId]);
+  if (count === null) return null;
+  if (count === 0) return (
+    <p className="text-xs text-amber-600 mt-1">⚠️ No documents saved to this transport yet — fill and save the STAT MCS form in the Documents tab first</p>
+  );
+  return <p className="text-xs text-blue-600 mt-1">📎 {count} document{count !== 1 ? 's' : ''} attached</p>;
+};
+
 const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, showCreateInvoice, setShowCreateInvoice, invoiceForm, setInvoiceForm, invoiceError, onFetch, setInvoicesFilter, onCreate, onApprove, onSend }) => {
   useEffect(() => { onFetch(invoicesFilter); }, [invoicesFilter]);
 
@@ -3141,6 +3156,9 @@ const InvoicesPanel = ({ invoices, invoicesFilter, invoicesLoading, transports, 
                   </button>
                 )}
               </div>
+              {inv.status === 'approved' && (
+                <InvoiceDocCount transportId={inv.transportId} />
+              )}
             </div>
           ))}
         </div>
@@ -3434,6 +3452,9 @@ const DocumentsPanel = ({ transports }) => {
   const [selectedTransport, setSelectedTransport] = useState('');
   const [fieldValues, setFieldValues] = useState({});
   const [signatureData, setSignatureData] = useState(null);
+  const [savedDocsCount, setSavedDocsCount] = useState(null); // null | number
+  const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'success' | 'error'
+  const [saveMessage, setSaveMessage] = useState('');
   const [effectsRows, setEffectsRows] = useState(
     Array.from({ length: 10 }, (_, i) => ({ itemNum: i + 1, qty: '', description: '', jewelry: '', initials: '' }))
   );
@@ -3509,6 +3530,49 @@ const DocumentsPanel = ({ transports }) => {
     const canvas = witnessCanvasRef.current;
     if (canvas) { canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); }
     setFieldValues(prev => ({ ...prev, witness_signature: null }));
+  };
+
+  // Fetch saved docs count when transport is selected
+  useEffect(() => {
+    if (!selectedTransport) { setSavedDocsCount(null); return; }
+    apiRequest('GET', `/transports/${selectedTransport}/documents`)
+      .then(({ documents }) => setSavedDocsCount(documents.length))
+      .catch(() => setSavedDocsCount(null));
+  }, [selectedTransport]);
+
+  // Save to transport handler
+  const handleSaveToTransport = async () => {
+    if (!selectedTransport) {
+      setSaveStatus('error');
+      setSaveMessage('Select a transport first');
+      setTimeout(() => setSaveStatus(null), 3000);
+      return;
+    }
+    const tpl = templates.find(tp => tp.id === selectedTpl);
+    if (!tpl) return;
+
+    // Collect signature — check witness_signature and main signature
+    const sig = signatureData || fieldValues.witness_signature || null;
+
+    setSaveStatus('saving');
+    try {
+      await apiRequest('POST', `/transports/${selectedTransport}/documents`, {
+        template_name: tpl.name,
+        field_data: JSON.stringify(fieldValues),
+        signature_data: sig,
+      });
+      const transport = transports.find(t => t.id === selectedTransport);
+      setSaveStatus('success');
+      setSaveMessage(`✅ Document saved to transport #${transport?.caseNumber || selectedTransport}`);
+      // Refresh count
+      const { documents } = await apiRequest('GET', `/transports/${selectedTransport}/documents`);
+      setSavedDocsCount(documents.length);
+      setTimeout(() => setSaveStatus(null), 4000);
+    } catch (err) {
+      setSaveStatus('error');
+      setSaveMessage(err.message || 'Failed to save document');
+      setTimeout(() => setSaveStatus(null), 4000);
+    }
   };
 
   // Auto-fill from transport
@@ -3685,7 +3749,14 @@ const DocumentsPanel = ({ transports }) => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">Auto-fill from Transport</label>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Auto-fill from Transport
+                {savedDocsCount !== null && (
+                  <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-medium">
+                    📎 {savedDocsCount} saved
+                  </span>
+                )}
+              </label>
               <select value={selectedTransport} onChange={e => setSelectedTransport(e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded text-sm">
                 <option value="">— Select transport —</option>
@@ -3873,12 +3944,26 @@ const DocumentsPanel = ({ transports }) => {
                   </div>
                 );
               })}
-              <button
-                onClick={handlePrint}
-                className="w-full bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-800 flex items-center justify-center gap-2 mt-2"
-              >
-                🖨️ Download / Print PDF
-              </button>
+              {saveStatus && (
+                <div className={`text-sm px-3 py-2 rounded-lg ${saveStatus === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : saveStatus === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200'}`}>
+                  {saveStatus === 'saving' ? '⏳ Saving...' : saveMessage}
+                </div>
+              )}
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={handleSaveToTransport}
+                  disabled={saveStatus === 'saving'}
+                  className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  💾 Save to Transport
+                </button>
+                <button
+                  onClick={handlePrint}
+                  className="flex-1 bg-gray-900 text-white py-2.5 rounded-lg font-medium hover:bg-gray-800 flex items-center justify-center gap-2"
+                >
+                  🖨️ Print / PDF
+                </button>
+              </div>
             </div>
           )}
         </div>

@@ -575,4 +575,47 @@ router.post('/:id/messages', authenticateToken, (req, res) => {
   res.status(201).json({ message: msg });
 });
 
+// ─── Transport Documents ──────────────────────────────────────────────────────
+
+// POST /api/transports/:id/documents — save a completed document
+router.post('/:id/documents', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { template_name, field_data, signature_data } = req.body;
+  if (!template_name || !field_data) {
+    return res.status(400).json({ error: 'template_name and field_data are required' });
+  }
+  const db = getDb();
+  const transport = db.prepare('SELECT id FROM transports WHERE id = ?').get(id);
+  if (!transport) return res.status(404).json({ error: 'Transport not found' });
+
+  const result = db.prepare(`
+    INSERT INTO transport_documents (transport_id, template_name, field_data, signature_data, created_by)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(id, template_name, field_data, signature_data || null, req.user.username);
+
+  const doc = db.prepare('SELECT id, transport_id, template_name, created_at, created_by FROM transport_documents WHERE id = ?')
+    .get(result.lastInsertRowid);
+  res.status(201).json({ document: doc });
+});
+
+// GET /api/transports/:id/documents — list saved documents
+router.get('/:id/documents', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const db = getDb();
+  const docs = db.prepare(
+    'SELECT id, transport_id, template_name, created_at, created_by FROM transport_documents WHERE transport_id = ? ORDER BY created_at DESC'
+  ).all(id);
+  res.json({ documents: docs });
+});
+
+// DELETE /api/transports/:id/documents/:docId — delete a saved doc (admin only)
+router.delete('/:id/documents/:docId', authenticateToken, requireRole('admin'), (req, res) => {
+  const { id, docId } = req.params;
+  const db = getDb();
+  const doc = db.prepare('SELECT id FROM transport_documents WHERE id = ? AND transport_id = ?').get(docId, id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  db.prepare('DELETE FROM transport_documents WHERE id = ?').run(docId);
+  res.json({ message: 'Document deleted' });
+});
+
 module.exports = router;

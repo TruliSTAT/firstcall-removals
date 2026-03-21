@@ -92,6 +92,28 @@ router.put('/:id/approve', authenticateToken, requireRole('admin'), (req, res) =
   res.json({ invoice: rowToInvoice(row) });
 });
 
+function renderDocumentHtml(doc) {
+  const fields = JSON.parse(doc.field_data || '{}');
+  const rows = Object.entries(fields)
+    .filter(([, v]) => v !== null && v !== '' && v !== undefined && v !== false)
+    .map(([key, value]) => {
+      const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      return `<tr><td style="padding:4px 8px;font-weight:600;color:#555;width:40%;border-bottom:1px solid #f0f0f0">${label}</td><td style="padding:4px 8px;border-bottom:1px solid #f0f0f0">${value}</td></tr>`;
+    }).join('');
+
+  const sigImg = doc.signature_data
+    ? `<div style="margin-top:16px"><strong>Signature:</strong><br><img src="${doc.signature_data}" style="border:1px solid #ccc;max-width:300px;margin-top:8px"/></div>`
+    : '';
+
+  return `
+    <div style="margin-top:32px;padding-top:24px;border-top:2px solid #e5e7eb">
+      <h3 style="margin:0 0 16px;color:#1a1a2e;font-size:16px">${doc.template_name}</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">${rows}</table>
+      ${sigImg}
+    </div>
+  `;
+}
+
 // PUT /api/invoices/:id/send — send email via Resend
 router.put('/:id/send', authenticateToken, requireRole('admin'), async (req, res) => {
   const { id } = req.params;
@@ -100,6 +122,14 @@ router.put('/:id/send', authenticateToken, requireRole('admin'), async (req, res
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
   if (!inv.funeral_home_email) return res.status(400).json({ error: 'No email address on invoice' });
   if (inv.status === 'draft') return res.status(400).json({ error: 'Invoice must be approved before sending' });
+
+  // Fetch saved documents for this transport
+  const savedDocs = db.prepare('SELECT * FROM transport_documents WHERE transport_id = ? ORDER BY created_at ASC')
+    .all(inv.transport_id);
+
+  const documentsHtml = savedDocs.length > 0
+    ? savedDocs.map(doc => renderDocumentHtml(doc)).join('')
+    : '';
 
   const apiKey = process.env.RESEND_API_KEY || 're_DfxCWGDy_H7v4EvaGY6Pzc4VJZE4pDWxe';
   const fromEmail = 'leads@knowlegalleads.com';
@@ -142,6 +172,7 @@ router.put('/:id/send', authenticateToken, requireRole('admin'), async (req, res
   </div>
   <div class="footer">STAT First Call Removals · Professional Funeral Transport<br>
   This invoice was generated automatically. Please retain for your records.</div>
+  ${documentsHtml}
 </body>
 </html>`;
 
