@@ -343,11 +343,15 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
 
       {(() => {
         const isAdmin = userRole === 'admin';
+        // Pending calls: any available employee can accept
+        const canAcceptPending = userRole === 'employee' && transport.status === 'Pending';
+        // After accepted: only the assigned driver or admin can progress
         const isAssignedDriver = userRole === 'employee' &&
           transport.assignedDriverId &&
           String(transport.assignedDriverId) === String(currentUser?.driverId || currentUser?.id);
-        const canAdvance = (isAdmin || isAssignedDriver) && transport.status !== 'Completed';
-        if (!canAdvance) return null;
+        const canAdvanceAssigned = (isAdmin || isAssignedDriver) && transport.status !== 'Pending' && transport.status !== 'Completed';
+        const canAdvance = isAdmin || canAcceptPending || canAdvanceAssigned;
+        if (!canAdvance || transport.status === 'Completed') return null;
         return (
           <AdvanceStatusButton
             transport={transport}

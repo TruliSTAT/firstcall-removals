@@ -345,8 +345,8 @@ router.post('/', authenticateToken, (req, res) => {
   const row = getTransportWithNames(db, id);
   const created = rowToTransport(row);
 
-  // Fire-and-forget SMS alert to dispatch team
-  alertNewTransport(created);
+  // Fire-and-forget SMS alert to dispatch team + all available drivers
+  alertNewTransport(created, db);
 
   res.status(201).json({ transport: created });
 });
