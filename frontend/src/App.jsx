@@ -37,7 +37,15 @@ async function openAuthPdf(path) {
   if (!res.ok) { alert('Could not load PDF: ' + res.status); return; }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
-  window.open(url, '_blank');
+  // Use <a> click instead of window.open — avoids mobile Safari popup blocking
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
 }
 
 async function apiRequest(method, path, body = null) {
@@ -243,6 +251,38 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
   const [showAssign, setShowAssign] = useState(false);
   const [selDriver, setSelDriver] = useState(transport.assignedDriverId || '');
   const [selVehicle, setSelVehicle] = useState(transport.assignedVehicleId || '');
+  const [dispatchAttachments, setDispatchAttachments] = useState(null);
+  const [dispatchAttachLoading, setDispatchAttachLoading] = useState(false);
+  const [showAttach, setShowAttach] = useState(false);
+  const [dispatchEmailForms, setDispatchEmailForms] = useState({});
+  const dispatchFileRef = React.useRef(null);
+
+  const loadDispatchAttachments = async () => {
+    if (dispatchAttachLoading) return;
+    setDispatchAttachLoading(true);
+    try {
+      const data = await apiRequest('GET', `/transports/${transport.id}/attachments`);
+      setDispatchAttachments(data.attachments || []);
+    } catch(_) { setDispatchAttachments([]); }
+    finally { setDispatchAttachLoading(false); }
+  };
+
+  const handleDispatchUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append('file', file);
+      try { await apiUpload(`/transports/${transport.id}/attachments`, fd); } catch(_) {}
+    }
+    await loadDispatchAttachments();
+    e.target.value = '';
+  };
+
+  const toggleAttach = () => {
+    if (!showAttach && dispatchAttachments === null) loadDispatchAttachments();
+    setShowAttach(p => !p);
+  };
 
   const availableDrivers = (drivers || []).filter(d => d.status === 'Available' || d.id === transport.assignedDriverId);
   const availableVehicles = (vehicles || []).filter(v => v.status === 'Available' || v.id === transport.assignedVehicleId);
@@ -387,15 +427,70 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
         </button>
       )}
 
-      {/* Summary PDF */}
+      {/* Attachments + Summary PDF */}
       {(userRole === 'admin' || userRole === 'employee') && (
-        <div className="mt-2 pt-2 border-t border-gray-100">
-          <button
-            onClick={() => openAuthPdf(`/transports/${transport.id}/summary.pdf`)}
-            className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600"
-          >
-            <FileText className="w-3 h-3" />📄 Summary PDF
-          </button>
+        <div className="mt-2 pt-2 border-t border-gray-100 space-y-2">
+          {/* Attachment toggle */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={toggleAttach}
+              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 font-medium">
+              <Paperclip className="w-3 h-3" />
+              Docs {dispatchAttachments ? `(${dispatchAttachments.length})` : ''}
+            </button>
+            <button onClick={() => openAuthPdf(`/transports/${transport.id}/summary.pdf`)}
+              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600">
+              <FileText className="w-3 h-3" />📄 Summary PDF
+            </button>
+          </div>
+          {showAttach && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <button onClick={() => dispatchFileRef.current?.click()}
+                  className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2 py-1 rounded hover:bg-blue-100 flex items-center gap-1">
+                  <Paperclip className="w-3 h-3" /> Upload Doc
+                </button>
+                <input ref={dispatchFileRef} type="file" multiple className="hidden" onChange={handleDispatchUpload} />
+              </div>
+              {dispatchAttachLoading && <p className="text-xs text-gray-400">Loading...</p>}
+              {dispatchAttachments && dispatchAttachments.length === 0 && <p className="text-xs text-gray-400 italic">No documents attached</p>}
+              {dispatchAttachments && dispatchAttachments.map(att => (
+                <div key={att.id} className="flex items-center justify-between bg-gray-50 rounded px-2 py-1 text-xs">
+                  <span className="truncate text-gray-700 flex-1 mr-2">{att.original_name}</span>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => openAuthPdf(`/transports/${transport.id}/attachments/${att.id}/download`)}
+                      title="Download" className="p-1 text-gray-400 hover:text-blue-600"><Download className="w-3 h-3" /></button>
+                    <button onClick={() => openAuthPdf(`/transports/${transport.id}/attachments/${att.id}/download`)}
+                      title="Print" className="p-1 text-gray-400 hover:text-blue-600"><Printer className="w-3 h-3" /></button>
+                    <button onClick={() => setDispatchEmailForms(p => ({ ...p, [att.id]: { open: !p[att.id]?.open, to: '', subject: `FCR Doc: ${att.original_name}`, message: '' } }))}
+                      title="Email" className="p-1 text-gray-400 hover:text-blue-600"><Mail className="w-3 h-3" /></button>
+                  </div>
+                </div>
+              ))}
+              {dispatchAttachments && dispatchAttachments.map(att => dispatchEmailForms[att.id]?.open && (
+                <div key={`email-${att.id}`} className="bg-blue-50 border border-blue-200 rounded p-2 space-y-1">
+                  <input type="email" placeholder="To email" value={dispatchEmailForms[att.id]?.to || ''}
+                    onChange={e => setDispatchEmailForms(p => ({ ...p, [att.id]: { ...p[att.id], to: e.target.value } }))}
+                    className="w-full text-xs p-1 border border-gray-300 rounded" />
+                  <input type="text" placeholder="Subject" value={dispatchEmailForms[att.id]?.subject || ''}
+                    onChange={e => setDispatchEmailForms(p => ({ ...p, [att.id]: { ...p[att.id], subject: e.target.value } }))}
+                    className="w-full text-xs p-1 border border-gray-300 rounded" />
+                  <textarea placeholder="Message" value={dispatchEmailForms[att.id]?.message || ''}
+                    onChange={e => setDispatchEmailForms(p => ({ ...p, [att.id]: { ...p[att.id], message: e.target.value } }))}
+                    className="w-full text-xs p-1 border border-gray-300 rounded" rows={2} />
+                  <div className="flex gap-1">
+                    <button onClick={async () => {
+                      const f = dispatchEmailForms[att.id];
+                      try { await apiRequest('POST', `/transports/${transport.id}/attachments/${att.id}/email`, { to: f.to, subject: f.subject, message: f.message }); }
+                      catch(_) {}
+                      setDispatchEmailForms(p => ({ ...p, [att.id]: { ...p[att.id], open: false } }));
+                    }} className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700">Send</button>
+                    <button onClick={() => setDispatchEmailForms(p => ({ ...p, [att.id]: { ...p[att.id], open: false } }))}
+                      className="text-xs text-gray-500 px-2 py-1">Cancel</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
