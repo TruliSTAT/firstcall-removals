@@ -13,7 +13,7 @@ router.use(authenticateToken, requireRole('admin'));
 router.get('/users', (req, res) => {
   const db = getDb();
   const users = db.prepare(`
-    SELECT id, username, role, email, phone, funeral_home_name, email_verified, created_at
+    SELECT id, username, role, email, phone, funeral_home_name, display_name, email_verified, created_at
     FROM users
     ORDER BY role, username
   `).all();
@@ -52,7 +52,7 @@ router.post('/users', (req, res) => {
 // PUT /api/admin/users/:id — edit user (admin only)
 router.put('/users/:id', (req, res) => {
   const { id } = req.params;
-  const { email, phone, role, funeral_home_name } = req.body;
+  const { email, phone, role, funeral_home_name, display_name } = req.body;
   const db = getDb();
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -66,17 +66,19 @@ router.put('/users/:id', (req, res) => {
       email = ?,
       phone = ?,
       role = ?,
-      funeral_home_name = ?
+      funeral_home_name = ?,
+      display_name = ?
     WHERE id = ?
   `).run(
     email !== undefined ? (email || null) : user.email,
     phone !== undefined ? (phone || null) : user.phone,
     role || user.role,
     funeral_home_name !== undefined ? (funeral_home_name || null) : user.funeral_home_name,
+    display_name !== undefined ? (display_name || null) : user.display_name,
     id
   );
 
-  const updated = db.prepare('SELECT id, username, role, email, phone, funeral_home_name, email_verified, created_at FROM users WHERE id = ?').get(id);
+  const updated = db.prepare('SELECT id, username, role, email, phone, funeral_home_name, display_name, email_verified, created_at FROM users WHERE id = ?').get(id);
   res.json({ user: updated });
 });
 

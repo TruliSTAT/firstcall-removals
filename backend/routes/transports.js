@@ -852,4 +852,32 @@ router.get('/:id/summary.pdf', authenticateToken, (req, res) => {
   doc.end();
 });
 
+// PUT /api/transports/:id/cancel — admin soft-cancel a transport
+router.put('/:id/cancel', authenticateToken, requireRole('admin'), (req, res) => {
+  const { id } = req.params;
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM transports WHERE id = ?').get(id);
+  if (!existing) return res.status(404).json({ error: 'Transport not found' });
+  if (existing.status === 'Completed' || existing.status === 'Cancelled') {
+    return res.status(400).json({ error: `Cannot cancel a ${existing.status} transport` });
+  }
+  db.prepare("UPDATE transports SET status = 'Cancelled' WHERE id = ?").run(id);
+  const row = db.prepare(`
+    SELECT t.*, d.name as driver_name, v.name as vehicle_name
+    FROM transports t
+    LEFT JOIN drivers d ON t.assigned_driver_id = d.id
+    LEFT JOIN vehicles v ON t.assigned_vehicle_id = v.id
+    WHERE t.id = ?
+  `).get(id);
+  // Free up driver/vehicle if assigned
+  if (existing.assigned_driver_id) {
+    db.prepare("UPDATE drivers SET status = 'Available' WHERE id = ?").run(existing.assigned_driver_id);
+  }
+  if (existing.assigned_vehicle_id) {
+    db.prepare("UPDATE vehicles SET status = 'Available', driver_id = NULL WHERE id = ?").run(existing.assigned_vehicle_id);
+  }
+  const { rowToTransport } = require('../database');
+  res.json({ transport: rowToTransport(row) });
+});
+
 module.exports = router;

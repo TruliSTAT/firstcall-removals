@@ -336,6 +336,9 @@ function migrateDb(db) {
   try { db.exec('ALTER TABLE funeral_homes ADD COLUMN default_destination_contact TEXT'); } catch(_) {}
   try { db.exec('ALTER TABLE funeral_homes ADD COLUMN default_destination_phone TEXT'); } catch(_) {}
 
+  // Add display_name to users if missing
+  try { db.exec('ALTER TABLE users ADD COLUMN display_name TEXT'); } catch(_) {}
+
   // Invoice table: add new columns if missing
   const invoiceNewCols = [
     ['invoice_number', 'TEXT'],

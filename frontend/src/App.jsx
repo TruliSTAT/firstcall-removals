@@ -80,6 +80,7 @@ const STATUS_COLORS = {
   'Arrived':   'bg-orange-100 text-orange-800 border-orange-300',
   'Loaded':    'bg-purple-100 text-purple-800 border-purple-300',
   'Completed': 'bg-green-100 text-green-800 border-green-300',
+  'Cancelled': 'bg-red-100 text-red-800 border-red-300',
 };
 
 const STATUS_DOT = {
@@ -89,6 +90,7 @@ const STATUS_DOT = {
   'Arrived':   'bg-orange-500',
   'Loaded':    'bg-purple-500',
   'Completed': 'bg-green-500',
+  'Cancelled': 'bg-red-400',
 };
 
 const NEXT_BUTTON_LABEL = {
@@ -226,7 +228,7 @@ const AdvanceStatusButton = ({ transport, onAdvance, loading, etaValue, onEtaCha
 };
 
 // Dispatch board card
-const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles, onEdit, currentUser }) => {
+const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles, onEdit, currentUser, onCancelRequest }) => {
   const [showAssign, setShowAssign] = useState(false);
   const [selDriver, setSelDriver] = useState(transport.assignedDriverId || '');
   const [selVehicle, setSelVehicle] = useState(transport.assignedVehicleId || '');
@@ -241,6 +243,7 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
       transport.status === 'En Route' ? 'border-indigo-400' :
       transport.status === 'Arrived' ? 'border-orange-400' :
       transport.status === 'Loaded' ? 'border-purple-400' :
+      transport.status === 'Cancelled' ? 'border-red-400' :
       'border-green-400'
     }`}>
       <div className="flex justify-between items-start gap-2">
@@ -352,7 +355,7 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
           String(transport.assignedDriverId) === String(currentUser?.driverId || currentUser?.id);
         const canAdvanceAssigned = (isAdmin || isAssignedDriver) && transport.status !== 'Pending' && transport.status !== 'Completed';
         const canAdvance = isAdmin || canAcceptPending || canAdvanceAssigned;
-        if (!canAdvance || transport.status === 'Completed') return null;
+        if (!canAdvance || transport.status === 'Completed' || transport.status === 'Cancelled') return null;
         return (
           <AdvanceStatusButton
             transport={transport}
@@ -363,6 +366,15 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
           />
         );
       })()}
+
+      {userRole === 'admin' && transport.status !== 'Completed' && transport.status !== 'Cancelled' && (
+        <button
+          onClick={() => onCancelRequest && onCancelRequest(transport.id)}
+          className="w-full mt-2 py-2 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50"
+        >
+          Cancel Transport
+        </button>
+      )}
 
       {/* Summary PDF */}
       {(userRole === 'admin' || userRole === 'employee') && (
@@ -386,7 +398,7 @@ const DispatchCard = ({ transport, userRole, onAdvance, loading, etaValues, setE
 
 // ─── Dispatch Board ───────────────────────────────────────────────────────────
 
-const DispatchBoard = ({ transports, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles, onEdit, currentUser }) => {
+const DispatchBoard = ({ transports, userRole, onAdvance, loading, etaValues, setEtaValue, onAssign, drivers, vehicles, onEdit, currentUser, onCancelRequest }) => {
   const now = Date.now();
   const yesterday = now - 24 * 60 * 60 * 1000;
 
@@ -439,6 +451,7 @@ const DispatchBoard = ({ transports, userRole, onAdvance, loading, etaValues, se
                     vehicles={vehicles}
                     onEdit={onEdit}
                     currentUser={currentUser}
+                    onCancelRequest={onCancelRequest}
                   />
                 ))}
               </div>
@@ -1757,6 +1770,7 @@ const FuneralTransportApp = () => {
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [adminUsersSearch, setAdminUsersSearch] = useState('');
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [cancelConfirmId, setCancelConfirmId] = useState(null);
 
   // Invoices state
   const [invoices, setInvoices] = useState([]);
@@ -2672,33 +2686,34 @@ const FuneralTransportApp = () => {
       <div className="bg-gray-900 text-white p-4 shadow-lg">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <img
-              src="/logos/wings-only.jpg"
-              alt="STAT"
-              className="h-10 w-auto object-contain rounded"
-            />
-            <div>
-            <h1 className="text-xl font-bold">STAT First Call Removals</h1>
-            <p className="text-gray-300 text-sm">
-              {userRole && userRole.replace('_', ' ').toUpperCase()} Portal
-              {currentUser && <span className="ml-2 opacity-70">— {currentUser.username}</span>}
-              {lastRefresh && (
-                <span className="ml-2 opacity-50 text-xs">
-                  Updated {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                </span>
+            <div className="relative">
+              <img
+                src="/logos/wings-only.jpg"
+                alt="STAT"
+                className="h-10 w-auto object-contain rounded"
+                style={{ filter: 'invert(1)' }}
+              />
+              {alerts.length > 0 && (
+                <div className="absolute -bottom-1 -right-1 bg-red-500 rounded-full w-5 h-5 flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">{alerts.length}</span>
+                </div>
               )}
-            </p>
+            </div>
+            <div>
+              <div className="text-xs font-black tracking-[0.4em] text-gray-200 uppercase">STAT</div>
+              <div className="text-base font-bold text-white leading-tight">First Call Removals</div>
+              <p className="text-gray-300 text-xs">
+                {userRole && userRole.replace('_', ' ').toUpperCase()} Portal
+                {currentUser && <span className="ml-2 opacity-70">— {currentUser.username}</span>}
+                {lastRefresh && (
+                  <span className="ml-2 opacity-50">
+                    Updated {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                )}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {alerts.length > 0 && (
-              <div className="relative">
-                <Bell className="w-5 h-5 text-yellow-300" />
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-                  {alerts.length}
-                </span>
-              </div>
-            )}
             <button
               onClick={() => setShowProfileModal(true)}
               className="text-gray-300 hover:text-white text-sm flex items-center gap-1"
@@ -2787,6 +2802,41 @@ const FuneralTransportApp = () => {
           onClose={() => setShowProfileModal(false)}
           onProfileUpdated={(updatedUser) => setCurrentUser(updatedUser)}
         />
+      )}
+
+      {cancelConfirmId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Cancel Transport?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              This will mark the transport as <strong>Cancelled</strong> and release the assigned driver and vehicle. This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCancelConfirmId(null)}
+                className="flex-1 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50"
+              >
+                No, Keep It
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const { transport } = await apiRequest('PUT', `/transports/${cancelConfirmId}/cancel`);
+                    setTransports(prev => prev.map(t => t.id === transport.id ? transport : t));
+                    setCancelConfirmId(null);
+                    showToast('Transport cancelled');
+                  } catch (err) {
+                    showToast('Error: ' + err.message);
+                    setCancelConfirmId(null);
+                  }
+                }}
+                className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700"
+              >
+                Yes, Cancel It
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="p-4 max-w-4xl mx-auto">
@@ -3348,6 +3398,7 @@ const FuneralTransportApp = () => {
               vehicles={vehicles}
               onEdit={t => setEditTransport(t)}
               currentUser={currentUser}
+              onCancelRequest={setCancelConfirmId}
             />
           </div>
         )}
@@ -6354,7 +6405,7 @@ const AdminUsersPanel = () => {
 
   const openEdit = (u) => {
     setEditingUser(u);
-    setEditForm({ email: u.email || '', phone: u.phone || '', role: u.role, funeral_home_name: u.funeral_home_name || '' });
+    setEditForm({ email: u.email || '', phone: u.phone || '', role: u.role, funeral_home_name: u.funeral_home_name || '', display_name: u.display_name || '' });
     setEditError('');
     setResetUserId(null);
     setDeleteUserId(null);
@@ -6603,6 +6654,7 @@ const AdminUsersPanel = () => {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="text-left p-3 font-medium text-gray-600">User</th>
+                    <th className="text-left p-3 font-medium text-gray-600 hidden sm:table-cell">Name</th>
                     <th className="text-left p-3 font-medium text-gray-600 hidden sm:table-cell">Email / Phone</th>
                     <th className="text-left p-3 font-medium text-gray-600 hidden md:table-cell">Funeral Home</th>
                     <th className="text-left p-3 font-medium text-gray-600 hidden sm:table-cell">Joined</th>
@@ -6617,6 +6669,7 @@ const AdminUsersPanel = () => {
                           <div className="font-medium text-gray-900">{u.username}</div>
                           <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_BADGE_COLORS[u.role] || 'bg-gray-100 text-gray-700'}`}>{u.role}</span>
                         </td>
+                        <td className="p-3 text-gray-700 hidden sm:table-cell">{u.display_name || <span className="italic text-gray-300">—</span>}</td>
                         <td className="p-3 text-gray-500 hidden sm:table-cell">
                           <div>{u.email || <span className="italic text-gray-300">—</span>}</div>
                           <div className="text-xs">{u.phone || ''}</div>
@@ -6644,8 +6697,13 @@ const AdminUsersPanel = () => {
                       {/* Inline edit row */}
                       {editingUser?.id === u.id && (
                         <tr>
-                          <td colSpan={5} className="px-3 pb-3 bg-blue-50">
+                          <td colSpan={6} className="px-3 pb-3 bg-blue-50">
                             <div className="grid grid-cols-2 gap-2 mt-2">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Full Name</label>
+                                <input type="text" value={editForm.display_name || ''} onChange={e => setEditForm(p => ({ ...p, display_name: e.target.value }))}
+                                  className="w-full p-1.5 border border-gray-300 rounded text-sm" placeholder="First Last" />
+                              </div>
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
                                 <input type="email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))}
@@ -6685,7 +6743,7 @@ const AdminUsersPanel = () => {
                       {/* Inline reset password row */}
                       {resetUserId === u.id && (
                         <tr>
-                          <td colSpan={5} className="px-3 pb-3 bg-yellow-50">
+                          <td colSpan={6} className="px-3 pb-3 bg-yellow-50">
                             <div className="mt-2 space-y-2">
                               <p className="text-xs text-yellow-800 font-medium">Reset password for <strong>{u.username}</strong> (no old password required)</p>
                               <div className="flex gap-2">
@@ -6707,7 +6765,7 @@ const AdminUsersPanel = () => {
                       {/* Inline delete confirm row */}
                       {deleteUserId === u.id && (
                         <tr>
-                          <td colSpan={5} className="px-3 pb-3 bg-red-50">
+                          <td colSpan={6} className="px-3 pb-3 bg-red-50">
                             <div className="mt-2">
                               <p className="text-xs text-red-800 font-medium mb-2">Delete <strong>{u.username}</strong>? This cannot be undone.</p>
                               <div className="flex gap-2">
