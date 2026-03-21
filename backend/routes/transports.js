@@ -519,7 +519,29 @@ router.put('/:id', authenticateToken, (req, res) => {
   }
 
   const row = getTransportWithNames(db, id);
-  res.json({ transport: rowToTransport(row) });
+  const updated = rowToTransport(row);
+
+  // Always notify Tommy of every status change on every call
+  if (status && status !== existing.status) {
+    const { sendDriverSMS } = require('../lib/sendSMS');
+    const driverId = assignedDriverId || existing.assigned_driver_id;
+    let driverName = 'Unassigned';
+    if (driverId) {
+      const d = db.prepare('SELECT name FROM drivers WHERE id = ?').get(driverId);
+      if (d) driverName = d.name;
+    }
+    const statusMsg = [
+      `📍 FCR STATUS UPDATE`,
+      `Case: ${updated.caseNumber || existing.case_number || 'N/A'}`,
+      `${updated.decedentName || existing.decedent_name || 'Unknown'}`,
+      `Status: ${status}`,
+      `Driver: ${driverName}`,
+      updated.funeralHomeName || existing.funeral_home_name ? `FH: ${updated.funeralHomeName || existing.funeral_home_name}` : null,
+    ].filter(Boolean).join(' | ');
+    sendDriverSMS('+13058774880', statusMsg).catch(() => {});
+  }
+
+  res.json({ transport: updated });
 });
 
 // POST /api/transports/:id/odometer — log an odometer reading
