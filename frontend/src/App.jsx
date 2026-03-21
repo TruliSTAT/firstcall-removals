@@ -1414,6 +1414,7 @@ const EMPTY_FORM = {
   notes: '',
   isImmediate: true,
   scheduledPickupAt: '',
+  assignedUserId: null,
 };
 
 const EMPTY_FH_FORM = {
@@ -1780,6 +1781,12 @@ const FuneralTransportApp = () => {
   const [adminUsersSearch, setAdminUsersSearch] = useState('');
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [cancelConfirmId, setCancelConfirmId] = useState(null);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+
+  // Caller search for intake form (admin/employee assigning transport to a FH user)
+  const [callerSearch, setCallerSearch] = useState('');
+  const [callerResults, setCallerResults] = useState([]);
+  const callerSearchTimer = useRef(null);
 
   // Invoices state
   const [invoices, setInvoices] = useState([]);
@@ -1953,9 +1960,9 @@ const FuneralTransportApp = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoiceForm.transportId]);
 
-  // Auto-dismiss alerts after 30 seconds
+  // Auto-dismiss alerts after 30 seconds; auto-close notif panel when empty
   useEffect(() => {
-    if (!alerts.length) return;
+    if (alerts.length === 0) { setShowNotifPanel(false); return; }
     const timer = setTimeout(() => {
       if (alerts.length > 0) {
         const oldest = alerts[alerts.length - 1];
@@ -2127,6 +2134,19 @@ const FuneralTransportApp = () => {
     setLoginData({ username: '', password: '' });
   };
 
+  const handleCallerSearch = (val) => {
+    setCallerSearch(val);
+    clearTimeout(callerSearchTimer.current);
+    if (val.length < 2) { setCallerResults([]); return; }
+    callerSearchTimer.current = setTimeout(async () => {
+      try {
+        const fhId = formData.funeralHomeId || '';
+        const { users } = await apiRequest('GET', `/auth/search-users?q=${encodeURIComponent(val)}${fhId ? `&funeral_home_id=${fhId}` : ''}`);
+        setCallerResults(users || []);
+      } catch(_) { setCallerResults([]); }
+    }, 300);
+  };
+
   const handleSubmitRequest = async () => {
     setLoading(true);
     setApiError('');
@@ -2137,10 +2157,13 @@ const FuneralTransportApp = () => {
         estimatedMiles: parseInt(formData.estimatedMiles) || 0,
         funeralHomeId: formData.funeralHomeId || undefined,
         scheduledPickupAt: formData.isImmediate ? null : (formData.scheduledPickupAt || null),
+        assignedUserId: formData.assignedUserId || undefined,
       });
       setTransports(prev => [transport, ...prev]);
       setFormData(EMPTY_FORM);
       setAiFilledFields({});
+      setCallerSearch('');
+      setCallerResults([]);
       setShowForm(false);
       setSubmitSuccess({ caseNumber: transport.caseNumber });
       setTimeout(() => setSubmitSuccess(null), 5000);
@@ -2695,7 +2718,7 @@ const FuneralTransportApp = () => {
       <div className="bg-gray-900 text-white p-4 shadow-lg">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="relative">
+            <div className="relative cursor-pointer" onClick={() => alerts.length > 0 && setShowNotifPanel(p => !p)} title={alerts.length > 0 ? 'View notifications' : undefined}>
               <img
                 src="/logos/wings-only.jpg"
                 alt="STAT"
@@ -2736,6 +2759,32 @@ const FuneralTransportApp = () => {
           </div>
         </div>
       </div>
+
+      {/* Notification dropdown panel */}
+      {showNotifPanel && alerts.length > 0 && (
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-3 space-y-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold text-blue-800 uppercase tracking-wide">Notifications ({alerts.length})</span>
+            <button onClick={() => setShowNotifPanel(false)} className="text-blue-400 hover:text-blue-600 text-xs">✕ Close</button>
+          </div>
+          {alerts.map(alert => (
+            <div key={alert.id} className="flex items-start gap-3 bg-white border border-blue-200 rounded-lg p-3">
+              <Bell className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-blue-900">{alert.message}</p>
+                {alert.decedent_name && <p className="text-xs text-blue-600 mt-0.5">Transport: {alert.decedent_name}</p>}
+              </div>
+              <button onClick={() => dismissAlert(alert.id)} className="text-blue-300 hover:text-blue-600 text-lg leading-none">×</button>
+            </div>
+          ))}
+          <button
+            onClick={() => { alerts.forEach(a => dismissAlert(a.id)); setShowNotifPanel(false); }}
+            className="text-xs text-blue-600 hover:text-blue-800 underline"
+          >
+            Dismiss all
+          </button>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div className="bg-white border-b">
@@ -3280,6 +3329,46 @@ const FuneralTransportApp = () => {
                           placeholder="Phone" />
                       </FormField>
                     </div>
+
+                    {/* Caller / FH User assignment — admin/employee only */}
+                    {(userRole === 'admin' || userRole === 'employee') && (
+                      <div className="mt-3">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Assign to FH User <span className="text-gray-400 font-normal">(optional — links transport to their account)</span></label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={callerSearch}
+                            onChange={e => handleCallerSearch(e.target.value)}
+                            className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                            placeholder="Type name to find funeral home user..."
+                            autoComplete="off"
+                          />
+                          {callerResults.length > 0 && (
+                            <div className="absolute z-10 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1">
+                              {callerResults.map(u => (
+                                <button key={u.id} type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({ ...prev, assignedUserId: u.id }));
+                                    setCallerSearch(u.display_name || u.username);
+                                    setCallerResults([]);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-100 last:border-0"
+                                >
+                                  <span className="font-medium">{u.display_name || u.username}</span>
+                                  {u.funeral_home_name && <span className="text-gray-500 ml-2">· {u.funeral_home_name}</span>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {formData.assignedUserId && (
+                            <button type="button"
+                              onClick={() => { setFormData(p => ({ ...p, assignedUserId: null })); setCallerSearch(''); }}
+                              className="absolute right-2 top-2 text-gray-400 hover:text-red-500 text-xs"
+                            >✕</button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Scheduling */}
@@ -6346,6 +6435,7 @@ const AdminUsersPanel = () => {
   const [usersLoading, setUsersLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
+  const [activeTransportUserIds, setActiveTransportUserIds] = useState(new Set());
 
   // Edit state
   const [editingUser, setEditingUser] = useState(null);
@@ -6394,6 +6484,18 @@ const AdminUsersPanel = () => {
     }
   };
 
+  const loadActiveTransports = async () => {
+    try {
+      const { transports } = await apiRequest('GET', '/transports');
+      const ids = new Set(
+        (transports || [])
+          .filter(t => !['Completed', 'Cancelled'].includes(t.status) && t.createdByUserId)
+          .map(t => t.createdByUserId)
+      );
+      setActiveTransportUserIds(ids);
+    } catch(_) {}
+  };
+
   const loadCodes = async () => {
     setCodesLoading(true);
     try {
@@ -6406,7 +6508,7 @@ const AdminUsersPanel = () => {
     }
   };
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { loadUsers(); loadActiveTransports(); }, []);
   useEffect(() => { if (section === 'codes') loadCodes(); }, [section]);
 
   // ── User CRUD handlers ───────────────────────────────────────────────────
@@ -6531,13 +6633,26 @@ const AdminUsersPanel = () => {
   // ── Filtered users ───────────────────────────────────────────────────────
 
   const q = search.toLowerCase();
-  const filtered = users.filter(u =>
-    !q ||
-    u.username?.toLowerCase().includes(q) ||
-    u.email?.toLowerCase().includes(q) ||
-    u.role?.toLowerCase().includes(q) ||
-    u.funeral_home_name?.toLowerCase().includes(q)
-  );
+  const isOnline = (u) => u.last_seen_at && (Date.now() - new Date(u.last_seen_at + 'Z').getTime()) < 30 * 60 * 1000;
+  const filtered = [...users]
+    .filter(u =>
+      !q ||
+      u.username?.toLowerCase().includes(q) ||
+      u.email?.toLowerCase().includes(q) ||
+      u.role?.toLowerCase().includes(q) ||
+      u.funeral_home_name?.toLowerCase().includes(q)
+    )
+    .sort((a, b) => {
+      const aActive = activeTransportUserIds.has(a.id);
+      const bActive = activeTransportUserIds.has(b.id);
+      const aOn = isOnline(a);
+      const bOn = isOnline(b);
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+      if (aOn && !bOn) return -1;
+      if (!aOn && bOn) return 1;
+      return 0;
+    });
 
   const codeStatus = (c) => {
     if (c.used_by) return { label: 'Used', color: 'bg-blue-100 text-blue-700' };
@@ -6674,8 +6789,18 @@ const AdminUsersPanel = () => {
                     <React.Fragment key={u.id}>
                       <tr className="hover:bg-gray-50">
                         <td className="p-3">
-                          <div className="font-medium text-gray-900">{u.username}</div>
-                          <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_BADGE_COLORS[u.role] || 'bg-gray-100 text-gray-700'}`}>{u.role}</span>
+                          <div className="font-medium text-gray-900 flex items-center gap-1">
+                            {u.username}
+                            {isOnline(u) && (
+                              <span className="inline-block w-2 h-2 rounded-full bg-green-500 flex-shrink-0" title="Online recently" />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_BADGE_COLORS[u.role] || 'bg-gray-100 text-gray-700'}`}>{u.role}</span>
+                            {activeTransportUserIds.has(u.id) && (
+                              <span className="text-xs px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">🚗 Active Call</span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-3 text-gray-700 hidden sm:table-cell">{u.display_name || <span className="italic text-gray-300">—</span>}</td>
                         <td className="p-3 text-gray-500 hidden sm:table-cell">

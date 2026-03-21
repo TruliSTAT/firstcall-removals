@@ -24,7 +24,9 @@ function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL
+      role TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      last_seen_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS drivers (
@@ -338,6 +340,10 @@ function migrateDb(db) {
 
   // Add display_name to users if missing
   try { db.exec('ALTER TABLE users ADD COLUMN display_name TEXT'); } catch(_) {}
+
+  // Add created_at and last_seen_at to users if missing
+  try { db.exec("ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT (datetime('now'))"); } catch(_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN last_seen_at TEXT'); } catch(_) {}
 
   // Invoice table: add new columns if missing
   const invoiceNewCols = [

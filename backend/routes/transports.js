@@ -296,7 +296,7 @@ router.post('/', authenticateToken, (req, res) => {
     pickupLocation, pickupLocationType, destination, destinationLocationType,
     decedentName, dateOfBirth, dateOfDeath, weight, funeralHomeName, funeralHomePhone,
     pickupContact, pickupPhone, destinationContact, destinationPhone,
-    caseNumber, estimatedMiles, notes, funeralHomeId, scheduledPickupAt
+    caseNumber, estimatedMiles, notes, funeralHomeId, scheduledPickupAt, assignedUserId
   } = req.body;
 
   const w = parseInt(weight) || 0;
@@ -305,6 +305,8 @@ router.post('/', authenticateToken, (req, res) => {
   const id = generateId('REQ');
   const date = new Date().toISOString().split('T')[0];
   const fhId = funeralHomeId ? parseInt(funeralHomeId) : null;
+  // Allow admin to link transport to a specific funeral home user
+  const createdBy = (assignedUserId && req.user.role === 'admin') ? parseInt(assignedUserId) : req.user.id;
 
   const db = getDb();
 
@@ -340,7 +342,7 @@ router.post('/', authenticateToken, (req, res) => {
     finalCaseNumber, m,
     notes || null,
     cost.pickupFee, cost.mileageFee, cost.obFee, cost.adminFee, cost.totalCost,
-    req.user.id, fhId, scheduledPickupAt || null
+    createdBy, fhId, scheduledPickupAt || null
   );
 
   const row = getTransportWithNames(db, id);

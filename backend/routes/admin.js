@@ -13,7 +13,7 @@ router.use(authenticateToken, requireRole('admin'));
 router.get('/users', (req, res) => {
   const db = getDb();
   const users = db.prepare(`
-    SELECT id, username, role, email, phone, funeral_home_name, display_name, email_verified, created_at
+    SELECT id, username, role, email, phone, funeral_home_name, display_name, email_verified, created_at, last_seen_at
     FROM users
     ORDER BY role, username
   `).all();

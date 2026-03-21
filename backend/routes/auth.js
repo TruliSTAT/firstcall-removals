@@ -31,6 +31,9 @@ router.post('/login', (req, res) => {
     { expiresIn: '24h' }
   );
 
+  // Track last seen timestamp
+  db.prepare("UPDATE users SET last_seen_at = datetime('now') WHERE id = ?").run(user.id);
+
   res.json({
     token,
     user: { id: user.id, username: user.username, role: user.role }
@@ -316,8 +319,35 @@ function verificationPage(title, message, success) {
 </html>`;
 }
 
-// GET /api/auth/admin/users-by-funeral-home — Admin only
+// GET /api/auth/search-users?q=john&funeral_home_id=3 — admin/employee search funeral_home users by name
 const { requireRole } = require('../middleware/auth');
+router.get('/search-users', authenticateToken, requireRole('admin', 'employee'), (req, res) => {
+  const { q, funeral_home_id } = req.query;
+  if (!q || q.length < 2) return res.json({ users: [] });
+  const db = getDb();
+  let users;
+  if (funeral_home_id) {
+    users = db.prepare(`
+      SELECT id, username, display_name, funeral_home_name, email, phone
+      FROM users
+      WHERE role = 'funeral_home'
+        AND funeral_home_id = ?
+        AND (username LIKE ? OR display_name LIKE ?)
+      LIMIT 5
+    `).all(parseInt(funeral_home_id), `%${q}%`, `%${q}%`);
+  } else {
+    users = db.prepare(`
+      SELECT id, username, display_name, funeral_home_name, email, phone
+      FROM users
+      WHERE role = 'funeral_home'
+        AND (username LIKE ? OR display_name LIKE ?)
+      LIMIT 5
+    `).all(`%${q}%`, `%${q}%`);
+  }
+  res.json({ users });
+});
+
+// GET /api/auth/admin/users-by-funeral-home — Admin only
 router.get('/admin/users-by-funeral-home', authenticateToken, requireRole('admin'), (req, res) => {
   const db = getDb();
   const users = db.prepare(`
